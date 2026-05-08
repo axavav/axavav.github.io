@@ -58,7 +58,7 @@
 3. Для работы глобуса требуется интернет-соединение (загрузка тайлов карт).
 
 ## 🤝 Автор
-[AXAVAV]([https://github.com/EE-MG950/horizon](https://github.com/axavav/axavav.github.io))
+[AXAVAV](https://github.com/axavav/axavav.github.io)
 
 ---
 *Проект создан для наглядной демонстрации того, как высота объекта влияет на его видимость в условиях сферичности планеты.*
