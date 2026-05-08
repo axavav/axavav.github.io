@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Earth Visibility: Professional Tool</title>
+    <script src="http://www.webglearth.com/v2/api.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        html, body { padding: 0; margin: 0; background-color: #0b0e14; font-family: 'Segoe UI', Tahoma, sans-serif; color: #e0e0e0; }
+        
+        #earth_wrapper { position: relative; width: 100%; height: 60vh; background: #000; border-bottom: 2px solid #333; }
+        #earth_div { width: 100%; height: 100%; position: absolute !important; }
+        
+        #ui-panel {
+            position: absolute; top: 20px; left: 20px; z-index: 100;
+            background: rgba(20, 25, 35, 0.9); padding: 20px;
+            border-radius: 12px; width: 340px; max-height: 85%; overflow-y: auto;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.5); border: 1px solid #444; backdrop-filter: blur(10px);
+        }
+
+        .lang-switch { position: absolute; top: 10px; right: 10px; background: #444; color: #fff; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-size: 10px; }
+
+        .container { display: flex; flex-direction: column; align-items: center; padding: 20px; gap: 30px; }
+        .card { background: #1a1f29; width: 100%; max-width: 1100px; padding: 25px; border-radius: 15px; border: 1px solid #333; box-sizing: border-box; }
+        h2 { color: #00d4ff; margin-top: 0; font-weight: 300; }
+        
+        .area-card { border: 1px solid #444; padding: 15px; margin-top: 15px; border-radius: 8px; background: #232936; position: relative; border-left: 6px solid; }
+        .control-group { margin-bottom: 10px; }
+        label { font-size: 10px; font-weight: bold; color: #aaa; display: block; text-transform: uppercase; margin-bottom: 4px; }
+        input { background: #0b0e14; border: 1px solid #444; color: #fff; padding: 6px; border-radius: 4px; width: 100%; box-sizing: border-box; }
+        
+        .stats-box { background: #000; padding: 12px; border-radius: 6px; margin-top: 10px; font-size: 12px; color: #00d4ff; font-family: 'Courier New', monospace; line-height: 1.5; }
+        .add-btn { width: 100%; padding: 12px; background: #27ae60; color: white; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; }
+        
+        .layer-switch { margin-bottom: 15px; display: flex; gap: 5px; margin-top: 10px; }
+        .layer-btn { flex: 1; padding: 8px; font-size: 11px; cursor: pointer; border: 1px solid #444; background: #232936; color: #ccc; border-radius: 4px; }
+        .layer-btn.active { background: #00d4ff; color: #000; }
+        .remove-btn { position: absolute; top: 10px; right: 10px; background: #ff3b30; color: white; border: none; border-radius: 3px; padding: 2px 8px; cursor: pointer; }
+
+        #extreme-geo-container { height: 500px; position: relative; overflow: hidden; background: #0b0e14; border-radius: 15px; border: 1px solid #333; }
+        #geo-ui { position: absolute; top: 0; width: 100%; background: rgba(20, 25, 35, 0.8); padding: 15px; display: flex; justify-content: space-around; border-bottom: 1px solid #333; z-index: 10; box-sizing: border-box;}
+        .metric { text-align: center; }
+        .metric .number { font-size: 20px; color: #00d4ff; font-weight: bold; font-family: monospace; }
+        .metric .label { font-size: 10px; color: #888; text-transform: uppercase; }
+        svg { width: 100%; height: 100%; touch-action: none; }
+    </style>
+</head>
+<body onload="initialize()">
+
+    <div id="earth_wrapper">
+        <div id="earth_div"></div>
+        <div id="ui-panel">
+            <button class="lang-switch" onclick="toggleLang()" id="langBtn">EN</button>
+            <h3 id="txt-title" style="margin:0 0 5px 0; color: #00d4ff;">Управление зонами</h3>
+            
+            <div class="layer-switch">
+                <button id="btn-osm" class="layer-btn active" onclick="setLayer('osm')">Схема</button>
+                <button id="btn-sat" class="layer-btn" onclick="setLayer('sat')">Спутник</button>
+            </div>
+            <button id="txt-add" class="add-btn" onclick="addArea()">+ Добавить область</button>
+            <div id="areas-list"></div>
+        </div>
+    </div>
+
+    <div class="container">
+        <div class="card" style="padding: 0; overflow: hidden;">
+            <div style="padding: 25px 25px 10px 25px;"><h2 id="txt-geo-title">Экстремальная геометрия</h2></div>
+            <div id="extreme-geo-container">
+                <div id="geo-ui">
+                    <div class="metric"><span class="label" id="lbl-dist">Дистанция (R)</span><div id="v-dist" class="number">0</div></div>
+                    <div class="metric"><span class="label" id="lbl-arc">Дуга (%)</span><div id="v-arc" class="number">0</div></div>
+                    <div class="metric"><span class="label" id="lbl-angle">Угол</span><div id="v-angle" class="number">0°</div></div>
+                </div>
+                <svg id="scene" viewBox="0 0 1000 600">
+                    <g id="grid"></g>
+                    <line id="line1" stroke="rgba(0, 212, 255, 0.4)" stroke-width="1.5" />
+                    <line id="line2" stroke="rgba(0, 212, 255, 0.4)" stroke-width="1.5" />
+                    <circle id="mainCircle" fill="none" stroke="#fff" stroke-width="2" />
+                    <path id="redArc" fill="none" stroke="#ff3b30" stroke-width="5" stroke-linecap="round" />
+                    <circle id="handle" r="12" fill="#007AFF" style="cursor: grab;" />
+                </svg>
+            </div>
+        </div>
+        <div class="card">
+            <h2 id="txt-chart-title">Микро-масштаб: первые 100 сантиметров</h2>
+            <canvas id="microChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        let earth, currentLayer, microChart;
+        let areas = [];
+        const R = 6371000;
+        let currentLang = 'ru';
+
+        const i18n = {
+    ru: {
+        title: "Управление зонами", 
+        add: "+ Добавить область", 
+        geo: "Двигайте голубую точку мышкой",
+        chart: "Отдаление горизонта при подъёме наблюдателя", // Изменено
+        h: "Высота (м)", 
+        l_dist: "Дистанция (R)",
+        l_arc: "Дуга (%)", 
+        l_angle: "Угол", 
+        s_dist: "До края", 
+        s_earth: "Земли",
+        btn_osm: "Схема", 
+        btn_sat: "Спутник", 
+        chart_lbl: "Дальность горизонта (м)",
+        lat: "Широта", 
+        lng: "Долгота",
+        axis_x: "Высота (см)", // Добавлено
+        axis_y: "До края (м)"  // Добавлено
+    },
+    en: {
+        title: "Zone Management", 
+        add: "+ Add Area", 
+        geo: "Move the blue dot with your mouse",
+        chart: "Horizon distance vs observer height", // Изменено
+        h: "Height (m)", 
+        l_dist: "Distance (R)",
+        l_arc: "Arc (%)", 
+        l_angle: "Angle", 
+        s_dist: "To edge", 
+        s_earth: "of Earth",
+        btn_osm: "Map", 
+        btn_sat: "Satellite", 
+        chart_lbl: "Horizon Distance (m)",
+        lat: "Latitude", 
+        lng: "Longitude",
+        axis_x: "Height (cm)", // Добавлено
+        axis_y: "To edge (m)"   // Добавлено
+    }
+};
+
+        function toggleLang() {
+            currentLang = currentLang === 'ru' ? 'en' : 'ru';
+            document.getElementById('langBtn').innerText = currentLang === 'ru' ? 'EN' : 'RU';
+            updateUI();
+        }
+
+        function updateUI() {
+    const t = i18n[currentLang];
+    document.getElementById('txt-title').innerText = t.title;
+    document.getElementById('txt-add').innerText = t.add;
+    document.getElementById('txt-geo-title').innerText = t.geo;
+    document.getElementById('txt-chart-title').innerText = t.chart; // Обновит заголовок
+    document.getElementById('lbl-dist').innerText = t.l_dist;
+    document.getElementById('lbl-arc').innerText = t.l_arc;
+    document.getElementById('lbl-angle').innerText = t.l_angle;
+    document.getElementById('btn-osm').innerText = t.btn_osm;
+    document.getElementById('btn-sat').innerText = t.btn_sat;
+    renderList();
+    
+    if (microChart) {
+        microChart.data.datasets[0].label = t.chart_lbl;
+        // Обновляем названия осей
+        microChart.options.scales.x.title.text = t.axis_x;
+        microChart.options.scales.y.title.text = t.axis_y;
+        microChart.update();
+    }
+}
+
+        function initialize() {
+            earth = new WE.map('earth_div', { center: [45, 35], zoom: 2.5, atmosphere: true, sky: true });
+            setLayer('osm');
+            
+            // Фикс клика: теперь зона перемещается!
+            earth.on('click', function(e) {
+                if (areas.length > 0) {
+                    const idx = areas.length - 1;
+                    areas[idx].lat = e.latlng.lat;
+                    areas[idx].lng = e.latlng.lng;
+                    drawArea(idx);
+                    renderList();
+                }
+            });
+
+            addArea();
+            initMicroChart();
+            initExtremeGeo();
+            updateUI();
+        }
+
+        function setLayer(type) {
+            if (currentLayer) currentLayer.removeFrom(earth);
+            let url = (type === 'sat') 
+                ? 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+                : 'https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png';
+            currentLayer = WE.tileLayer(url).addTo(earth);
+            document.getElementById('btn-sat').className = type === 'sat' ? 'layer-btn active' : 'layer-btn';
+            document.getElementById('btn-osm').className = type === 'osm' ? 'layer-btn active' : 'layer-btn';
+        }
+
+        function addArea() {
+            areas.push({ lat: 45, lng: 35, alt: 75, color: '#00d4ff', opacity: 0.2, polygon: null });
+            renderList();
+        }
+
+        function drawArea(index) {
+            const area = areas[index];
+            if (area.polygon) area.polygon.destroy();
+            const h = Math.max(0.1, parseFloat(area.alt));
+            let theta = Math.acos(R / (R + h)); 
+            if (theta > 1.55) theta = 1.55; 
+
+            const safeLat = Math.abs(area.lat) > 89.99 ? (area.lat > 0 ? 89.99 : -89.99) : area.lat;
+            const points = [];
+            for (let i = 0; i <= 100; i++) {
+                const p = getDest(safeLat, area.lng, theta, (i * 360) / 100);
+                points.push([p.lat, p.lng]);
+            }
+            area.polygon = WE.polygon(points, { color: area.color, opacity: area.opacity, fillColor: area.color, fillOpacity: area.opacity }).addTo(earth);
+            updateStats(index, h, theta);
+        }
+
+        function updateStats(index, h, theta) {
+            const t = i18n[currentLang];
+            const S_vis = 2 * Math.PI * Math.pow(R, 2) * (h / (R + h)) / 1000000;
+            const percent = (S_vis / 510065623 * 100).toFixed(4);
+            const edgeDist = (R * theta);
+            const edgeStr = edgeDist > 10000 ? (edgeDist/1000).toFixed(1) + " km" : edgeDist.toFixed(0) + " m";
+            const el = document.getElementById(`stat-${index}`);
+            if(el) el.innerHTML = `S ≈ ${S_vis.toLocaleString(undefined, {maximumFractionDigits: 0})} km² | <b>${percent}%</b> ${t.s_earth}<br>${t.s_dist}: <b>${edgeStr}</b> | H: <b>${(h/R).toFixed(5)} R</b>`;
+        }
+
+        function getDest(lat, lng, distRad, brngDeg) {
+            const la1 = lat * Math.PI / 180, lo1 = lng * Math.PI / 180, br = brngDeg * Math.PI / 180;
+            const la2 = Math.asin(Math.sin(la1) * Math.cos(distRad) + Math.cos(la1) * Math.sin(distRad) * Math.cos(br));
+            const lo2 = lo1 + Math.atan2(Math.sin(br) * Math.sin(distRad) * Math.cos(la1), Math.cos(distRad) - Math.sin(la1) * Math.sin(la2));
+            return { lat: la2 * 180 / Math.PI, lng: lo2 * 180 / Math.PI };
+        }
+
+        function renderList() {
+            const container = document.getElementById('areas-list');
+            const t = i18n[currentLang];
+            container.innerHTML = '';
+            areas.forEach((area, i) => {
+                const card = document.createElement('div');
+                card.className = 'area-card';
+                card.style.borderColor = area.color;
+                card.innerHTML = `
+                    <button class="remove-btn" onclick="removeArea(${i})">✕</button>
+                    <div class="control-group"><label>${t.h}</label><input type="number" value="${area.alt}" oninput="updateField(${i}, 'alt', this.value)"></div>
+                    <div style="display:flex; gap:5px; margin-bottom:10px;">
+                        <div style="flex:1"><label>${t.lat}</label><input type="number" step="0.01" value="${area.lat.toFixed(2)}" oninput="updateField(${i}, 'lat', this.value)"></div>
+                        <div style="flex:1"><label>${t.lng}</label><input type="number" step="0.01" value="${area.lng.toFixed(2)}" oninput="updateField(${i}, 'lng', this.value)"></div>
+                    </div>
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <input type="color" value="${area.color}" style="width:50px; height:30px; border:none; padding:2px; cursor:pointer;" oninput="updateField(${i}, 'color', this.value)">
+                        <input type="range" min="0.05" max="1" step="0.05" value="${area.opacity}" oninput="updateField(${i}, 'opacity', this.value)">
+                    </div>
+                    <div class="stats-box" id="stat-${i}"></div>
+                `;
+                container.appendChild(card);
+                drawArea(i);
+            });
+        }
+
+        function updateField(index, field, value) {
+            areas[index][field] = (field === 'color') ? value : parseFloat(value);
+            drawArea(index);
+        }
+
+        function removeArea(index) {
+            if (areas[index].polygon) areas[index].polygon.destroy();
+            areas.splice(index, 1);
+            renderList();
+        }
+
+        function initMicroChart() {
+    const points = [];
+    for (let h_cm = 0; h_cm <= 100; h_cm += 1) {
+        let h_m = h_cm / 100;
+        let theta = Math.acos(R / (R + h_m));
+        points.push({ x: h_cm, y: (R * theta).toFixed(1) });
+    }
+    const t = i18n[currentLang];
+    microChart = new Chart(document.getElementById('microChart'), {
+        type: 'line',
+        data: { 
+            datasets: [{ 
+                label: t.chart_lbl, 
+                data: points, 
+                borderColor: '#e67e22', 
+                backgroundColor: 'rgba(230, 126, 34, 0.1)', 
+                fill: true, 
+                pointRadius: 2 
+            }] 
+        },
+        options: { 
+            scales: { 
+                x: { 
+                    type: 'linear', 
+                    ticks: { color: '#888' },
+                    title: { display: true, text: t.axis_x, color: '#aaa' } // Подпись снизу
+                }, 
+                y: { 
+                    ticks: { color: '#888' },
+                    title: { display: true, text: t.axis_y, color: '#aaa' } // Подпись слева
+                } 
+            }, 
+            plugins: { 
+                legend: { labels: { color: '#e0e0e0' } } 
+            } 
+        }
+    });
+}
+
+        function initExtremeGeo() {
+            const svg = document.getElementById('scene');
+            const circleEl = document.getElementById('mainCircle'), arcEl = document.getElementById('redArc');
+            const l1 = document.getElementById('line1'), l2 = document.getElementById('line2');
+            const handle = document.getElementById('handle'), grid = document.getElementById('grid');
+            let pointX = 500; let isDragging = false;
+
+            for(let i=0; i<20; i++) {
+                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                line.setAttribute("stroke", "#222"); line.setAttribute("x1", i*100); line.setAttribute("y1", 0);
+                line.setAttribute("x2", i*100); line.setAttribute("y2", 1000);
+                grid.appendChild(line);
+            }
+
+            function updateGeo() {
+                const centerX = 200, centerY = 300;
+                const t = (pointX - 200) / 800;
+                const r = 10 + (350 * Math.pow(1 - t, 2.5));
+                let d = pointX - centerX;
+                if (d <= r + 0.05) { d = r + 0.05; pointX = centerX + d; }
+                const alpha = Math.acos(r / d);
+                const tx = centerX + r * Math.cos(alpha), ty1 = centerY - r * Math.sin(alpha), ty2 = centerY + r * Math.sin(alpha);
+                circleEl.setAttribute('cx', centerX); circleEl.setAttribute('cy', centerY); circleEl.setAttribute('r', r);
+                handle.setAttribute('cx', pointX); handle.setAttribute('cy', centerY);
+                l1.setAttribute('x1', pointX); l1.setAttribute('y1', centerY); l1.setAttribute('x2', pointX + (tx-pointX)*2000); l1.setAttribute('y2', centerY + (ty1-centerY)*2000);
+                l2.setAttribute('x1', pointX); l2.setAttribute('y1', centerY); l2.setAttribute('x2', pointX + (tx-pointX)*2000); l2.setAttribute('y2', centerY + (ty2-centerY)*2000);
+                arcEl.setAttribute('d', `M ${tx} ${ty1} A ${r} ${r} 0 0 1 ${tx} ${ty2}`);
+                document.getElementById('v-dist').textContent = ((d - r) / r).toFixed(4);
+                document.getElementById('v-arc').textContent = ((alpha * 2) / (Math.PI * 2) * 100).toFixed(2);
+                document.getElementById('v-angle').textContent = ((Math.PI - 2 * alpha) * 180 / Math.PI).toFixed(1) + "°";
+            }
+
+            const onMove = (e) => {
+                if (!isDragging) return;
+                const rect = svg.getBoundingClientRect();
+                const x = (e.clientX || (e.touches && e.touches[0].clientX)) - rect.left;
+                pointX = Math.max(201, Math.min(950, (x / rect.width) * 1000));
+                updateGeo();
+            };
+            handle.addEventListener('mousedown', () => isDragging = true);
+            window.addEventListener('mouseup', () => isDragging = false);
+            window.addEventListener('mousemove', onMove);
+            updateGeo();
+        }
+    </script>
+</body>
+</html>
