@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>Earth Visibility: Professional Tool</title>
-    <script src="http://www.webglearth.com/v2/api.js"></script>
+    <script src="https://www.webglearth.com/v2/api.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         html, body { padding: 0; margin: 0; background-color: #0b0e14; font-family: 'Segoe UI', Tahoma, sans-serif; color: #e0e0e0; }
@@ -316,7 +316,7 @@
             let pointX = 500; let isDragging = false;
 
             for(let i=0; i<20; i++) {
-                const line = document.createElementNS("http://www.w3.org/2000/svg", "line");
+                const line = document.createElementNS("https://www.w3.org/2000/svg", "line");
                 line.setAttribute("stroke", "#222"); line.setAttribute("x1", i*100); line.setAttribute("y1", 0);
                 line.setAttribute("x2", i*100); line.setAttribute("y2", 1000);
                 grid.appendChild(line);
