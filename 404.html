@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8">
+
+<title>Перенаправление...</title>
+
+<script>
+
+// Берем текущий путь (например, /NaMe)
+
+// 1. Берем путь
+var path = window.location.pathname;
+
+// 2. Убираем .html из конца, если он есть
+var cleanPath = path.replace(/\.html$/i, "");
+
+// 3. Переводим всё в нижний регистр
+var lowerPath = cleanPath.toLowerCase();
+
+// Если итоговый путь отличается от того, что ввел пользователь — редиректим
+if (path !== lowerPath) {
+    window.location.replace(lowerPath);
+} else {
+    document.write('<h1>Ошибка 404: Страница не найдена</h1>');
+}
+
+
+</script>
+
+</head>
+
+<body>
+
+</body>
+
+</html>
