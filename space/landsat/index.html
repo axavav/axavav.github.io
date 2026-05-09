@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Сравнение орбит: ГСО, ГСО-наклонная и ССО</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #050505; font-family: sans-serif; color: white; }
+        #info {
+            position: absolute; top: 10px; left: 10px; width: 350px;
+            background: rgba(0, 0, 0, 0.8); padding: 15px; border-radius: 8px;
+            pointer-events: none; line-height: 1.4; font-size: 14px;
+        }
+        .legend { margin-top: 10px; }
+        .geo { color: #00ff00; } /* Зеленый */
+        .sync { color: #ffff00; } /* Желтый */
+        .sso { color: #ff4444; }  /* Красный */
+        b { font-size: 16px; }
+    </style>
+</head>
+<body>
+
+<div id="info">
+    <b>Сравнение орбит</b><br><br>
+    <div class="legend"><span class="geo">●</span> <b>Геостационарная (ГСО):</b> Высота ~35 786 км, наклон 0°. Спутник "висит" над одной точкой экватора.</div>
+    <div class="legend"><span class="sync">●</span> <b>Геосинхронный (наклонная):</b> Период равен суткам, но из-за наклона описывает "восьмерку" (аналемму) над точкой.</div>
+    <div class="legend"><span class="sso">●</span> <b>Солнечно-синхронная (ССО):</b> Низкая орбита (Landsat-7). Проходит над полюсами.</div>
+    <hr>
+    <b>Почему Landsat-7 делает 15 витков?</b><br>
+    Период обращения Landsat-7 составляет около <b>99 минут</b>. 
+    $$1440 \text{ мин (сутки)} / 99 \text{ мин} \approx 14.5$$ 
+    На практике он делает почти 15 витков, смещаясь на запад, чтобы отснять всю планету. Время 10:00 выбрано для постоянного угла падения солнечных лучей (лучшие тени для съемки).
+</div>
+
+<script type="importmap">
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'https://unpkg.com/three@0.160.0/examples/jsm/controls/OrbitControls.js';
+
+    // Сцена
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    camera.position.set(15, 10, 20);
+
+    // Освещение
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.5);
+    sunLight.position.set(10, 0, 10);
+    scene.add(sunLight);
+    scene.add(new THREE.AmbientLight(0x333333));
+
+    // Земля
+    const earthGroup = new THREE.Group();
+    const geo = new THREE.SphereGeometry(5, 32, 32);
+    const mat = new THREE.MeshPhongMaterial({
+        map: new THREE.TextureLoader().load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg'),
+        bumpMap: new THREE.TextureLoader().load('https://unpkg.com/three-globe/example/img/earth-topology.png'),
+        bumpScale: 0.05,
+    });
+    const earth = new THREE.Mesh(geo, mat);
+    earthGroup.add(earth);
+    scene.add(earthGroup);
+
+    // Сетка экватора
+    const ethLine = new THREE.GridHelper(20, 2, 0x444444, 0x222222);
+    scene.add(ethLine);
+
+    // Функция создания орбиты
+    function createOrbit(radius, tilt, color, speed) {
+        const group = new THREE.Group();
+        group.rotation.z = tilt * (Math.PI / 180);
+        
+        // Линия орбиты
+        const curve = new THREE.EllipseCurve(0, 0, radius, radius);
+        const points = curve.getPoints(100);
+        const geometry = new THREE.BufferGeometry().setFromPoints(points);
+        const material = new THREE.LineBasicMaterial({ color: color, transparent: true, opacity: 0.5 });
+        const orbitLine = new THREE.Line(geometry, material);
+        orbitLine.rotation.x = Math.PI / 2;
+        group.add(orbitLine);
+
+        // Спутник
+        const satGeo = new THREE.SphereGeometry(0.3, 16, 16);
+        const satMat = new THREE.MeshBasicMaterial({ color: color });
+        const sat = new THREE.Mesh(satGeo, satMat);
+        group.add(sat);
+
+        scene.add(group);
+        return { group, sat, radius, speed };
+    }
+
+    // Создаем орбиты (масштаб условный для наглядности)
+    const orbits = [
+        createOrbit(15, 0, 0x00ff00, -0.01),   // ГСО (Зеленая)
+        createOrbit(15, 30, 0xffff00, -0.01),  // Геосинхронная наклонная (Желтая)
+        createOrbit(6.5, 98, 0xff4444, 0.15)  // ССО / Landsat (Красная) - летает быстро!
+    ];
+
+    // Анимация
+    let time = 0;
+    function animate() {
+        requestAnimationFrame(animate);
+        time += 1;
+
+        // Вращение Земли (1 оборот за цикл ГСО)
+        earthGroup.rotation.y += 0.01;
+
+        orbits.forEach(obj => {
+            const angle = time * obj.speed;
+            obj.sat.position.x = Math.cos(angle) * obj.radius;
+            obj.sat.position.z = Math.sin(angle) * obj.radius;
+        });
+
+        renderer.render(scene, camera);
+    }
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+
+    animate();
+</script>
+</body>
+</html>
