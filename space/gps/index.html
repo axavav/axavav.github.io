@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Орбитальный симулятор AXAVAV 2.0</title>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #05070a; color: white; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
+        canvas { background: radial-gradient(circle, #0d1117 0%, #000 100%); border-radius: 15px; box-shadow: 0 0 50px rgba(0,0,0,0.8); margin-bottom: 20px; border: 1px solid #1f2328; }
+        .panel { background: rgba(23, 27, 38, 0.95); padding: 25px; border-radius: 15px; width: 650px; border: 1px solid #30363d; }
+        .mode-selector { display: flex; gap: 10px; margin-bottom: 20px; }
+        button { flex: 1; padding: 12px; border: 1px solid #4af2ff; background: transparent; color: #4af2ff; cursor: pointer; border-radius: 6px; font-weight: bold; transition: 0.2s; }
+        button.active { background: #4af2ff; color: #05070a; }
+        .input-group { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+        .col { display: flex; flex-direction: column; }
+        label { font-size: 0.85em; color: #8b949e; margin-bottom: 5px; }
+        input { background: #0d1117; border: 1px solid #30363d; color: white; padding: 10px; border-radius: 6px; font-family: monospace; }
+        .checkbox-container { margin-bottom: 15px; display: flex; align-items: center; gap: 10px; font-weight: bold; color: #4af2ff; }
+        .stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; background: #0d1117; padding: 15px; border-radius: 10px; border: 1px solid #30363d; }
+        .stat-item { display: flex; flex-direction: column; align-items: center; text-align: center; }
+        .stat-item label { color: #8b949e; font-size: 0.75em; }
+        .val { color: #ffffff; font-weight: bold; font-family: 'Consolas', monospace; font-size: 0.95em; }
+        .highlight { color: #4af2ff; }
+    </style>
+</head>
+<body>
+
+    <h2 style="margin: 0 0 15px 0; letter-spacing: 1px;">Орбитальный симулятор</h2>
+    <canvas id="orbitCanvas" width="800" height="500"></canvas>
+
+    <div class="panel">
+        <div class="mode-selector">
+            <button id="btnHeights" class="active">Я не знаю скорость</button>
+            <button id="btnSpeeds">Я не знаю высоту</button>
+        </div>
+
+        <div class="checkbox-container">
+            <input type="checkbox" id="isCircular">
+            <label for="isCircular" style="cursor:pointer">Круговая орбита</label>
+        </div>
+
+        <div id="heightInputs" class="input-group">
+            <div class="col">
+                <label>Высота перигея (км)</label>
+                <input type="number" id="hPeri" value="1000" min="0" max="300000">
+            </div>
+            <div class="col">
+                <label>Высота апогея (км)</label>
+                <input type="number" id="hApo" value="10000" min="0" max="300000">
+            </div>
+        </div>
+
+        <div id="speedInputs" class="input-group" style="display: none;">
+            <div class="col">
+                <label>V в перигее (км/с)</label>
+                <input type="number" id="vPeri" value="8.5" step="0.1" min="0.1">
+            </div>
+            <div class="col">
+                <label>V в апогее (км/с)</label>
+                <input type="number" id="vApo" value="5.5" step="0.1" min="0.1">
+            </div>
+        </div>
+
+        <div class="stats">
+            <div class="stat-item"><label>V перигея</label><span id="resVP" class="val">-</span></div>
+            <div class="stat-item"><label>V апогея</label><span id="resVA" class="val">-</span></div>
+            <div class="stat-item"><label>V текущая</label><span id="resVNow" class="val highlight">-</span></div>
+            <div class="stat-item"><label>H перигея</label><span id="resHP" class="val">-</span></div>
+            <div class="stat-item"><label>H апогея</label><span id="resHA" class="val">-</span></div>
+            <div class="stat-item"><label>Период</label><span id="resT" class="val">-</span></div>
+        </div>
+    </div>
+
+<script>
+    const canvas = document.getElementById('orbitCanvas');
+    const ctx = canvas.getContext('2d');
+    const G = 6.67430e-11, M = 5.972e24, R_E = 6371000, MU = G * M;
+    
+    let mode = 'heights'; 
+    let satAngle = 0;
+    let earthAngle = 0;
+    let orbit = { rp: R_E + 1000000, ra: R_E + 10000000, a: 0, e: 0, vP: 0, vA: 0 };
+
+    const btnH = document.getElementById('btnHeights'), btnV = document.getElementById('btnSpeeds');
+    const hBox = document.getElementById('heightInputs'), vBox = document.getElementById('speedInputs');
+    const circ = document.getElementById('isCircular');
+
+    // Поля ввода
+    const inHP = document.getElementById('hPeri'), inHA = document.getElementById('hApo');
+    const inVP = document.getElementById('vPeri'), inVA = document.getElementById('vApo');
+
+    btnH.onclick = () => { mode = 'heights'; updateMode(); };
+    btnV.onclick = () => { mode = 'speeds'; updateMode(); };
+
+    function updateMode() {
+        btnH.classList.toggle('active', mode === 'heights');
+        btnV.classList.toggle('active', mode === 'speeds');
+        hBox.style.display = mode === 'heights' ? 'grid' : 'none';
+        vBox.style.display = mode === 'speeds' ? 'grid' : 'none';
+    }
+
+    // Слушатели для синхронизации круговой орбиты
+    [inHP, inVP].forEach(el => el.addEventListener('input', () => {
+        if(circ.checked) { inHA.value = inHP.value; inVA.value = inVP.value; }
+    }));
+    [inHA, inVA].forEach(el => el.addEventListener('input', () => {
+        if(circ.checked) { inHP.value = inHA.value; inVP.value = inVA.value; }
+    }));
+
+    function calculate() {
+        let rp, ra;
+
+        if (mode === 'heights') {
+    let hp = Math.max(0, parseFloat(inHP.value) || 0) * 1000;
+    let haRaw = parseFloat(inHA.value) || 0;
+    
+    // Ограничиваем ввод апогея 300 000 км
+    if (haRaw > 300000) {
+        haRaw = 300000;
+        inHA.value = 300000; // Визуально возвращаем значение в поле
+    }
+    
+    let ha = (circ.checked ? hp : Math.max(0, haRaw)) * 1000;
+    
+    if (ha < hp) [hp, ha] = [ha, hp];
+    rp = R_E + hp;
+    ra = R_E + ha;
+
+        } else {
+            let vp = Math.max(0.1, parseFloat(inVP.value) || 1) * 1000;
+            let va = circ.checked ? vp : Math.max(0.1, parseFloat(inVA.value) || 1) * 1000;
+            if (va > vp) [vp, va] = [va, vp];
+            
+            // Если скорости слишком малы для орбиты, ограничиваем радиус
+            // Энергия E = v²/2 - MU/r. Для круга r = MU/v²
+            if (Math.abs(vp - va) < 0.001) {
+                rp = ra = Math.max(R_E, MU / (vp * vp));
+            } else {
+                rp = Math.max(R_E, (2 * MU * va) / (vp * (vp + va)));
+                ra = (rp * vp) / va;
+            }
+        }
+
+        const a = (rp + ra) / 2;
+        const e = (ra - rp) / (ra + rp);
+        
+        orbit = {
+            rp, ra, a, e,
+            vP: Math.sqrt(MU * (2/rp - 1/a)),
+            vA: Math.sqrt(MU * (2/ra - 1/a)),
+            period: 2 * Math.PI * Math.sqrt(Math.pow(a, 3) / MU)
+        };
+
+        document.getElementById('resVP').innerText = (orbit.vP / 1000).toFixed(2) + " км/с";
+        document.getElementById('resVA').innerText = (orbit.vA / 1000).toFixed(2) + " км/с";
+        document.getElementById('resHP').innerText = Math.round((orbit.rp - R_E)/1000) + " км";
+        document.getElementById('resHA').innerText = Math.round((orbit.ra - R_E)/1000) + " км";
+        document.getElementById('resT').innerText = (orbit.period / 3600).toFixed(2) + " ч";
+    }
+
+    function drawEarth(ctx, x, y, r, angle) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.rotate(angle);
+        
+        // Океан
+        ctx.beginPath();
+        ctx.arc(0, 0, r, 0, Math.PI * 2);
+        ctx.fillStyle = '#1a73e8';
+        ctx.fill();
+        ctx.clip();
+
+        // Континенты (упрощенно)
+        ctx.fillStyle = '#4caf50';
+        for(let i=0; i<6; i++) {
+            ctx.beginPath();
+            ctx.ellipse((i%2?1:-1)*r*0.4, (i<3?1:-1)*r*0.3, r*0.6, r*0.3, i, 0, Math.PI*2);
+            ctx.fill();
+        }
+        ctx.restore();
+        
+        // Атмосферное свечение
+        ctx.beginPath();
+        ctx.arc(x, y, r, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(74, 242, 255, 0.3)';
+        ctx.lineWidth = 3;
+        ctx.stroke();
+    }
+
+    function mainLoop() {
+        calculate();
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        
+        const cx = canvas.width / 2, cy = canvas.height / 2;
+        const scale = 200 / orbit.ra;
+        const earthX = cx + (orbit.a * orbit.e * scale); 
+
+        // 1. Земля и её вращение (24ч пропорция)
+        earthAngle += 0.005; 
+        drawEarth(ctx, earthX, cy, R_E * scale, earthAngle);
+
+        // 2. Орбита
+        const b = orbit.a * Math.sqrt(1 - orbit.e**2);
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, orbit.a * scale, b * scale, 0, 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.15)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // 3. Спутник
+        const r_now = (orbit.a * (1 - orbit.e**2)) / (1 + orbit.e * Math.cos(satAngle));
+        const sX = earthX + Math.cos(satAngle) * r_now * scale;
+        const sY = cy + Math.sin(satAngle) * r_now * scale;
+
+        // Лазер
+        ctx.beginPath();
+        ctx.moveTo(sX, sY);
+        ctx.lineTo(earthX, cy);
+        ctx.strokeStyle = 'rgba(255, 74, 74, 0.6)';
+        ctx.setLineDash([5, 5]);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // Точка спутника
+        ctx.beginPath();
+        ctx.arc(sX, sY, 5, 0, Math.PI * 2);
+        ctx.fillStyle = '#ff4a4a';
+        ctx.shadowBlur = 10;
+        ctx.shadowColor = '#ff4a4a';
+        ctx.fill();
+        ctx.shadowBlur = 0;
+
+        // Скорость
+        const v_now = Math.sqrt(MU * (2/r_now - 1/orbit.a));
+        document.getElementById('resVNow').innerText = (v_now / 1000).toFixed(2) + " км/с";
+
+        // Движение спутника (Кеплер)
+        const h = Math.sqrt(MU * orbit.a * (1 - orbit.e**2));
+        satAngle += (h / (r_now * r_now)) * 30;
+
+        requestAnimationFrame(mainLoop);
+    }
+
+    mainLoop();
+</script>
+</body>
+</html>
