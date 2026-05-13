@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Orbital Ground Tracks</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #050508; color: white; font-family: sans-serif; }
+        #info { 
+            position: absolute; top: 20px; left: 20px; 
+            background: rgba(0,0,0,0.8); padding: 15px; 
+            border-radius: 10px; border: 1px solid #444; pointer-events: none;
+        }
+        .legend { margin-bottom: 5px; display: flex; align-items: center; }
+        .dot { width: 12px; height: 12px; border-radius: 50%; margin-right: 10px; }
+    </style>
+</head>
+<body>
+
+<div id="info">
+    <h4>Трассы спутников (h = 35786 км)</h4>
+    <div class="legend"><div class="dot" style="background: #ff4444;"></div> Красный: 0° (ГСО)</div>
+    <div class="legend"><div class="dot" style="background: #4444ff;"></div> Синий: 180° (Ретроград)</div>
+    <div class="legend"><div class="dot" style="background: #44ff44;"></div> Зеленый: 120°</div>
+    <div class="legend"><div class="dot" style="background: #ffff44;"></div> Желтый: 10°</div>
+    <p style="font-size: 0.8em; opacity: 0.7;">Линии рисуются на поверхности в реальном времени.</p>
+</div>
+
+<script type="importmap">
+    {
+        "imports": {
+            "three": "./libs/three/three.module.js",
+            "three/addons/": "./libs/three/"
+        }
+    }
+</script>
+
+<script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/OrbitControls.js';
+
+    const R_EARTH = 6371;
+    const GM = 398600;
+    const OMEGA_EARTH = 7.2921159e-5;
+    const VIEW_SCALE = 1/1000;
+    const ALTITUDE = 35786;
+
+    // Инициализация сцены
+    const scene = new THREE.Scene();
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    document.body.appendChild(renderer.domElement);
+    const controls = new OrbitControls(camera, renderer.domElement);
+    camera.position.set(40, 20, 40);
+
+    // Свет
+    const sun = new THREE.DirectionalLight(0xffffff, 2);
+    sun.position.set(50, 20, 50);
+    scene.add(sun, new THREE.AmbientLight(0x444444));
+
+    // Создание холста для рисования путей
+    const canvas = document.createElement('canvas');
+    canvas.width = 2048;
+    canvas.height = 1024;
+    const ctx = canvas.getContext('2d');
+    const trackTexture = new THREE.CanvasTexture(canvas);
+
+    // Земля
+    const earthGroup = new THREE.Group();
+    const earthGeom = new THREE.SphereGeometry(R_EARTH * VIEW_SCALE, 64, 64);
+    
+    // Основная текстура Земли
+    const earthMat = new THREE.MeshPhongMaterial({
+        map: new THREE.TextureLoader().load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg'),
+    });
+    const earthBody = new THREE.Mesh(earthGeom, earthMat);
+    earthGroup.add(earthBody);
+
+    // Слой для отрисовки путей (чуть больше радиусом, чтобы не было мерцания)
+    const trackMat = new THREE.MeshBasicMaterial({ map: trackTexture, transparent: true, opacity: 1 });
+    const trackLayer = new THREE.Mesh(new THREE.SphereGeometry(R_EARTH * VIEW_SCALE * 1.005, 64, 64), trackMat);
+    earthGroup.add(trackLayer);
+    
+    scene.add(earthGroup);
+
+    // Функция создания спутника
+    function createSat(color, inclinationDeg, traceSize) {
+        const orbitPivot = new THREE.Group(); 
+        orbitPivot.rotation.z = THREE.MathUtils.degToRad(inclinationDeg);
+        
+        const satGroup = new THREE.Group(); // Группа вращения
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial({ color }));
+        
+        const dist = (R_EARTH + ALTITUDE) * VIEW_SCALE;
+        mesh.position.x = dist;
+        
+        // Линия от центра
+        const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(dist,0,0)]);
+        const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }));
+        
+        satGroup.add(mesh, line);
+        orbitPivot.add(satGroup);
+        scene.add(orbitPivot);
+        
+        return { 
+        orbitPivot, 
+        satGroup, 
+        mesh, 
+        color: '#' + color.toString(16).padStart(6, '0'),
+        traceSize: traceSize // Сохраняем толщину здесь
+    };
+}
+
+    const satellites = [
+    createSat(0xff4444, 0, 0),    // Красный
+    createSat(0x4444ff, 180, 0),  // Синий
+    createSat(0x44ff44, 120, 0.8),    // Зеленый
+    createSat(0xffff44, 10, 0.6)   // Желтый
+];
+
+    let lastTime = performance.now();
+    const timeSpeed = 2000; // Ускорение времени для наглядности
+
+    function drawPointOnCanvas(satObj) {
+        // Получаем мировую позицию спутника
+        const worldPos = new THREE.Vector3();
+        satObj.mesh.getWorldPosition(worldPos);
+
+        // Переводим в локальные координаты вращающейся Земли
+        const localPos = worldPos.clone().applyMatrix4(earthGroup.matrixWorld.clone().invert());
+
+        // Сферические координаты
+        const r = localPos.length();
+        const lat = Math.asin(localPos.y / r);
+        const lon = Math.atan2(localPos.z, localPos.x);
+
+        // В пиксели канваса (UV проекция)
+        const x = (0.5 - lon / (2 * Math.PI)) * canvas.width;
+        const y = (0.5 - lat / Math.PI) * canvas.height;
+
+        ctx.fillStyle = satObj.color;
+        ctx.beginPath();
+        ctx.arc(x, y, satObj.traceSize, 0, Math.PI * 2);
+        ctx.fill();
+        trackTexture.needsUpdate = true;
+    }
+
+    function animate() {
+        const now = performance.now();
+        const dt = (now - lastTime) / 1000;
+        lastTime = now;
+
+        const r_orb = R_EARTH + ALTITUDE;
+        const v_orb = Math.sqrt(GM / r_orb);
+        const omega_sat = v_orb / r_orb;
+
+        // Вращение Земли
+        earthGroup.rotation.y += OMEGA_EARTH * dt * timeSpeed;
+
+        // Вращение спутников
+        satellites.forEach(s => {
+            s.satGroup.rotation.y += omega_sat * dt * timeSpeed;
+            drawPointOnCanvas(s);
+        });
+
+        controls.update();
+        renderer.render(scene, camera);
+        requestAnimationFrame(animate);
+    }
+
+    animate();
+
+    window.addEventListener('resize', () => {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+</script>
+</body>
+</html>
