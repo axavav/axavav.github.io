@@ -15,12 +15,16 @@
     </style>
 </head>
 <body>
+    <div id="time-panel" style="position: absolute; bottom: 20px; right: 20px; background: rgba(0,0,0,0.8); padding: 15px; border-radius: 10px; border: 1px solid #444; text-align: center; min-width: 150px;">
+    <div id="clock" style="font-size: 24px; font-family: monospace; color: #00ff00; margin-bottom: 10px;">00:00:00</div>
+    <button id="pauseBtn" style="padding: 8px 20px; cursor: pointer; background: #444; color: white; border: none; border-radius: 5px;">Пауза</button>
+</div>
 
 <div id="info">
     <h4>Трассы спутников (h = 35786 км)</h4>
     <div class="legend"><div class="dot" style="background: #ff4444;"></div> Красный: 0° (ГСО)</div>
     <div class="legend"><div class="dot" style="background: #4444ff;"></div> Синий: 180° (Ретроград)</div>
-    <div class="legend"><div class="dot" style="background: #44ff44;"></div> Зеленый: 120°</div>
+    <div class="legend"><div class="dot" style="background: #44ff44;"></div> Зеленый: 5°</div>
     <div class="legend"><div class="dot" style="background: #ffff44;"></div> Желтый: 10°</div>
     <p style="font-size: 0.8em; opacity: 0.7;">Линии рисуются на поверхности в реальном времени.</p>
 </div>
@@ -37,13 +41,26 @@
 <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/OrbitControls.js';
+    const R_EARTH = 6371.008; // Средний радиус IUGG
+const GM = 398600.4418;    // Геоцентрическая гравитационная постоянная
+const OMEGA_EARTH = 7.2921159e-5; // Угловая скорость вращения Земли (рад/с)
+let isPaused = false;
+let totalSimulatedSeconds = 0; // Время в симуляции (в секундах)
 
-    const R_EARTH = 6371;
-    const GM = 398600;
-    const OMEGA_EARTH = 7.2921159e-5;
+// Слушатель кнопки
+document.getElementById('pauseBtn').addEventListener('click', (e) => {
+    isPaused = !isPaused;
+    e.target.innerText = isPaused ? 'Пуск' : 'Пауза';
+    e.target.style.background = isPaused ? '#225522' : '#444';
+});
+
+
+// Точный расчет радиуса ГСО
+const R_GEO = Math.pow(GM / Math.pow(OMEGA_EARTH, 2), 1/3); 
+const EXACT_HEIGHT = R_GEO - R_EARTH;
     const VIEW_SCALE = 1/1000;
     const ALTITUDE = 35786;
-
+console.log("Точная высота ГСО:", EXACT_HEIGHT);
     // Инициализация сцены
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
@@ -84,43 +101,61 @@
     scene.add(earthGroup);
 
     // Функция создания спутника
-    function createSat(color, inclinationDeg, traceSize) {
-        const orbitPivot = new THREE.Group(); 
-        orbitPivot.rotation.z = THREE.MathUtils.degToRad(inclinationDeg);
-        
-        const satGroup = new THREE.Group(); // Группа вращения
-        const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial({ color }));
-        
-        const dist = (R_EARTH + ALTITUDE) * VIEW_SCALE;
-        mesh.position.x = dist;
-        
-        // Линия от центра
-        const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(dist,0,0)]);
-        const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }));
-        
-        satGroup.add(mesh, line);
-        orbitPivot.add(satGroup);
-        scene.add(orbitPivot);
-        
-        return { 
+    function createSat(color, inclinationDeg, traceSize, altitude, startAngleDeg) {
+    const orbitPivot = new THREE.Group(); 
+    orbitPivot.rotation.z = THREE.MathUtils.degToRad(inclinationDeg);
+    
+    const satGroup = new THREE.Group(); 
+    // Устанавливаем начальный угол поворота спутника на орбите
+    satGroup.rotation.y = THREE.MathUtils.degToRad(startAngleDeg);
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial({ color }));
+    
+    // Индивидуальное расстояние от центра Земли
+    const dist = (R_EARTH + altitude) * VIEW_SCALE;
+    mesh.position.x = dist;
+    
+    const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(dist,0,0)]);
+    const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }));
+    
+    satGroup.add(mesh, line);
+    orbitPivot.add(satGroup);
+    scene.add(orbitPivot);
+
+    // Рассчитываем угловую скорость (omega) по законам физики
+    const r_total = R_EARTH + altitude;
+    const v_orb = Math.sqrt(GM / r_total); // Первая космическая скорость для этой высоты
+    const omega = v_orb / r_total;        // Угловая скорость в рад/с
+
+    return { 
         orbitPivot, 
         satGroup, 
         mesh, 
         color: '#' + color.toString(16).padStart(6, '0'),
-        traceSize: traceSize // Сохраняем толщину здесь
+        traceSize: traceSize,
+        omega: omega // Сохраняем индивидуальную скорость
     };
 }
 
     const satellites = [
-    createSat(0xff4444, 0, 0),    // Красный
-    createSat(0x4444ff, 180, 0),  // Синий
-    createSat(0x44ff44, 120, 0.8),    // Зеленый
-    createSat(0xffff44, 10, 0.6)   // Желтый
+    // createSat(цвет, наклон к экватору, толщина следа, высота орбиты, НАЧАЛЬНЫЙ_УГОЛ)
+    createSat(0xff4444, 55, 2.8, 20200, 0),   
+    createSat(0x4444ff, 55, 0.0, 20200, 90), 
+    createSat(0x44ff44, 55, 0.0, 20200, 180),  
+    createSat(0x44ff44, 2, 0.2, 35786, 0),  
+    createSat(0xffff44, 55, 0.0, 20200, 270)    
 ];
 
     let lastTime = performance.now();
     const timeSpeed = 2000; // Ускорение времени для наглядности
-
+function updateClockDisplay() {
+    // Используем остаток от деления на 86400 (секунд в сутках), чтобы время шло по кругу
+    const daySeconds = totalSimulatedSeconds % 86400;
+    const h = Math.floor(daySeconds / 3600).toString().padStart(2, '0');
+    const m = Math.floor((daySeconds % 3600) / 60).toString().padStart(2, '0');
+    const s = Math.floor(daySeconds % 60).toString().padStart(2, '0');
+    
+    document.getElementById('clock').innerText = `${h}:${m}:${s}`;
+}
     function drawPointOnCanvas(satObj) {
         // Получаем мировую позицию спутника
         const worldPos = new THREE.Vector3();
@@ -146,27 +181,37 @@
     }
 
     function animate() {
-        const now = performance.now();
-        const dt = (now - lastTime) / 1000;
-        lastTime = now;
+    const now = performance.now();
+    const dt = (now - lastTime) / 1000;
+    lastTime = now;
 
-        const r_orb = R_EARTH + ALTITUDE;
-        const v_orb = Math.sqrt(GM / r_orb);
-        const omega_sat = v_orb / r_orb;
-
-        // Вращение Земли
-        earthGroup.rotation.y += OMEGA_EARTH * dt * timeSpeed;
-
-        // Вращение спутников
-        satellites.forEach(s => {
-            s.satGroup.rotation.y += omega_sat * dt * timeSpeed;
-            drawPointOnCanvas(s);
-        });
-
+    // Если пауза — просто отрисовываем текущий кадр и выходим
+    if (isPaused) {
         controls.update();
         renderer.render(scene, camera);
         requestAnimationFrame(animate);
+        return; 
     }
+
+    // Рассчитываем шаг времени в симуляции
+    const simStep = dt * timeSpeed;
+    totalSimulatedSeconds += simStep;
+
+    // Вращение Земли
+    earthGroup.rotation.y += OMEGA_EARTH * simStep;
+
+    // Вращение спутников и отрисовка следа
+    satellites.forEach(s => {
+        s.satGroup.rotation.y += s.omega * simStep;
+        drawPointOnCanvas(s);
+    });
+
+    updateClockDisplay(); // Обновляем текст часов
+
+    controls.update();
+    renderer.render(scene, camera);
+    requestAnimationFrame(animate);
+}
 
     animate();
 
