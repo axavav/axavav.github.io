@@ -71,8 +71,8 @@
     
     // Основная текстура Земли
     const earthMat = new THREE.MeshPhongMaterial({
-        map: new THREE.TextureLoader().load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg'),
-    });
+    map: new THREE.TextureLoader().load('earth-blue-marble.jpg')
+});
     const earthBody = new THREE.Mesh(earthGeom, earthMat);
     earthGroup.add(earthBody);
 
