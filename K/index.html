@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Визуализация k-кратного покрытия плоскости</title>
+    <style>
+        body { margin: 0; display: flex; flex-direction: column; align-items: center; background: #f0f0f0; font-family: sans-serif; }
+        canvas { background: white; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        .controls { padding: 20px; background: white; width: 100%; display: flex; justify-content: center; gap: 20px; border-bottom: 1px solid #ccc; flex-wrap: wrap; }
+        button { padding: 10px 20px; font-size: 16px; cursor: pointer; border: 1px solid #007bff; background: white; color: #007bff; border-radius: 5px; }
+        button.active { background: #007bff; color: white; }
+        .info { position: absolute; top: 120px; left: 20px; background: rgba(255,255,255,0.9); padding: 15px; border-radius: 8px; border: 1px solid #ccc; max-width: 300px; }
+        .legend { margin-top: 10px; font-size: 0.9em; color: #555; }
+    </style>
+</head>
+<body>
+
+<div class="controls">
+    <button onclick="setK(1)" id="btn1">k = 1 (Гексагональная)</button>
+    <button onclick="setK(2)" id="btn2">k = 2 (Квадратная + смещение)</button>
+    <button onclick="setK(3)" id="btn3" class="active">k = 3 (Плотная гексаг.)</button>
+    <button onclick="setK(4)" id="btn4">k = 4</button>
+    <div style="display: flex; align-items: center; gap: 10px;">
+        Прозрачность: <input type="range" id="alpha" min="0.05" max="0.5" step="0.01" value="0.3">
+    </div>
+</div>
+
+<div class="info" id="infoText"></div>
+
+<canvas id="canvas"></canvas>
+
+<script>
+    const canvas = document.getElementById('canvas');
+    const ctx = canvas.getContext('2d');
+    const infoText = document.getElementById('infoText');
+    
+    let k = 3;
+    const R = 60; // Фиксированный радиус
+
+    function resize() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight - 80;
+        draw();
+    }
+
+    function setK(newK) {
+        k = newK;
+        document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        document.getElementById('btn' + k).classList.add('active');
+        updateInfo();
+        draw();
+    }
+
+    function updateInfo() {
+        let text = `<strong>Режим k = ${k}</strong><br>`;
+        if (k === 2) {
+            text += "Используется квадратная решетка. Шаг равен стороне квадрата, в который вписана окружность (R√2). Вторая окружность смещена в угол квадрата.";
+        } else if (k === 1) {
+            text += "Оптимальное покрытие треугольной решеткой. Шаг R√3.";
+        } else {
+            text += "Уплотненная треугольная решетка для высокого коэффициента покрытия.";
+        }
+        infoText.innerHTML = text;
+    }
+
+    function draw() {
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        const alpha = document.getElementById('alpha').value;
+        ctx.fillStyle = `rgba(0, 123, 255, ${alpha})`;
+
+        if (k === 2) {
+            // Логика для k = 2: Квадратная решетка
+            const side = R * Math.sqrt(2); // Сторона квадрата 'a'
+            
+            for (let row = -1; row < (canvas.height / side) + 1; row++) {
+                for (let col = -1; col < (canvas.width / side) + 1; col++) {
+                    const x = col * side;
+                    const y = row * side;
+
+                    // 1. Окружность вокруг воображаемого квадрата (центр в центре квадрата)
+                    ctx.beginPath();
+                    ctx.arc(x + side/2, y + side/2, R, 0, Math.PI * 2);
+                    ctx.fill();
+
+                    // 2. Окружность в правом нижнем углу квадрата
+                    ctx.beginPath();
+                    ctx.arc(x + side, y + side, R, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        } else {
+            // Логика для треугольных решеток (k=1, 3, 4)
+            const factors = { 1: Math.sqrt(3), 3: 1.0, 4: 0.85 };
+            const L = R * factors[k];
+            const dy = L * Math.sqrt(3) / 2;
+
+            for (let row = -2; row < (canvas.height / dy) + 2; row++) {
+                for (let col = -2; col < (canvas.width / L) + 2; col++) {
+                    let x = col * L;
+                    let y = row * dy;
+                    if (row % 2 !== 0) x += L / 2;
+
+                    ctx.beginPath();
+                    ctx.arc(x, y, R, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        }
+    }
+
+    window.addEventListener('resize', resize);
+    document.getElementById('alpha').addEventListener('input', draw);
+    
+    resize();
+    setK(3);
+</script>
+
+</body>
+</html>
