@@ -102,30 +102,33 @@ console.log("Точная высота ГСО:", EXACT_HEIGHT);
     scene.add(earthGroup);
 
     // Функция создания спутника
-    function createSat(color, inclinationDeg, traceSize, altitude, startAngleDeg) {
+    // Добавляем параметр orbitYDeg (поворот плоскости вокруг Земли)
+function createSat(color, inclinationDeg, traceSize, altitude, startAngleDeg, orbitYDeg) {
+    const orbitPlaneAnchor = new THREE.Group(); // Группа для поворота всей плоскости
+    orbitPlaneAnchor.rotation.y = THREE.MathUtils.degToRad(orbitYDeg);
+
     const orbitPivot = new THREE.Group(); 
     orbitPivot.rotation.z = THREE.MathUtils.degToRad(inclinationDeg);
     
     const satGroup = new THREE.Group(); 
-    // Устанавливаем начальный угол поворота спутника на орбите
     satGroup.rotation.y = THREE.MathUtils.degToRad(startAngleDeg);
+    
     const mesh = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.5), new THREE.MeshBasicMaterial({ color }));
     
-    // Индивидуальное расстояние от центра Земли
     const dist = (R_EARTH + altitude) * VIEW_SCALE;
     mesh.position.x = dist;
     
     const lineGeom = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(dist,0,0)]);
-    const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.3 }));
+    const line = new THREE.Line(lineGeom, new THREE.LineBasicMaterial({ color, transparent: true, opacity: 0.2 }));
     
     satGroup.add(mesh, line);
     orbitPivot.add(satGroup);
-    scene.add(orbitPivot);
+    orbitPlaneAnchor.add(orbitPivot); // Вкладываем наклонную орбиту в поворотную группу
+    scene.add(orbitPlaneAnchor);
 
-    // Рассчитываем угловую скорость (omega) по законам физики
     const r_total = R_EARTH + altitude;
-    const v_orb = Math.sqrt(GM / r_total); // Первая космическая скорость для этой высоты
-    const omega = v_orb / r_total;        // Угловая скорость в рад/с
+    const v_orb = Math.sqrt(GM / r_total);
+    const omega = v_orb / r_total;
 
     return { 
         orbitPivot, 
@@ -133,18 +136,36 @@ console.log("Точная высота ГСО:", EXACT_HEIGHT);
         mesh, 
         color: '#' + color.toString(16).padStart(6, '0'),
         traceSize: traceSize,
-        omega: omega // Сохраняем индивидуальную скорость
+        omega: omega 
     };
 }
 
     const satellites = [
-    // createSat(цвет, наклон к экватору, толщина следа, высота орбиты, НАЧАЛЬНЫЙ_УГОЛ)
-    createSat(0xff4444, 55, 2.8, 20200, 0),   
-    createSat(0x4444ff, 55, 0.0, 20200, 90), 
-    createSat(0x44ff44, 55, 0.0, 20200, 180),  
-    createSat(0x44ff44, 2, 0.2, 35786, 0),  
-    createSat(0xffff44, 55, 0.0, 20200, 270)    
+    // createSat(цвет, наклон к экватору, толщина следа, высота орбиты, НАЧАЛЬНЫЙ_УГОЛ, поворот плоскости)
+    createSat(0x44ff44, 0, 0.0, 35786, 0, 0),  
+    createSat(0x44ff44, 70, 0.0, 35786, 0, 60)    
 ];
+const numOrbits = 6;
+const satsPerOrbit = 4;
+const inclination = 55;
+const altitude = 20200; // Для GPS высота ~20200 км
+
+const colors = [0xff4444, 0x4444ff, 0x44ff44, 0xffff44, 0xff00ff, 0x00ffff];
+
+for (let i = 0; i < numOrbits; i++) {
+    const orbitY = i * (360 / numOrbits); // Поворот каждой плоскости на 60 градусов
+    
+    for (let j = 0; j < satsPerOrbit; j++) {
+        const startPhase = j * (360 / satsPerOrbit); // Разнос 4 спутников на 90 градусов внутри орбиты
+        
+        // Оставляем след только для одного спутника, чтобы не загромождать экран, или для всех
+        const trace = (i === 0 && j === 0) ? 0.8 : 0.8; 
+        
+        satellites.push(
+            createSat(colors[i], inclination, trace, altitude, startPhase, orbitY)
+        );
+    }
+}
 
     let lastTime = performance.now();
     const timeSpeed = 2000; // Ускорение времени для наглядности
