@@ -32,15 +32,16 @@
 <script type="importmap">
     {
         "imports": {
-            "three": "./libs/three/three.module.js",
-            "three/addons/": "./libs/three/"
+            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
         }
     }
 </script>
 
 <script type="module">
     import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/OrbitControls.js';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
     const R_EARTH = 6371.008; // Средний радиус IUGG
 const GM = 398600.4418;    // Геоцентрическая гравитационная постоянная
 const OMEGA_EARTH = 7.2921159e-5; // Угловая скорость вращения Земли (рад/с)
@@ -88,8 +89,8 @@ console.log("Точная высота ГСО:", EXACT_HEIGHT);
     
     // Основная текстура Земли
     const earthMat = new THREE.MeshPhongMaterial({
-    map: new THREE.TextureLoader().load('earth-blue-marble.jpg')
-});
+        map: new THREE.TextureLoader().load('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg'),
+    });
     const earthBody = new THREE.Mesh(earthGeom, earthMat);
     earthGroup.add(earthBody);
 
