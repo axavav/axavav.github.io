@@ -1,1 +1,416 @@
-wrsr
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Геометрический Оптимизатор v18</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100%; background: #f0f0f0; user-select: none; }
+        
+        /* Двухполосное верхнее меню */
+        #nav-container {
+            position: absolute; top: 0; left: 0; width: 100%;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+            z-index: 100; box-sizing: border-box; padding: 4px;
+        }
+        .nav-row {
+            display: flex; gap: 4px; margin-bottom: 4px; width: 100%;
+        }
+        .nav-row:last-child { margin-bottom: 0; }
+        
+        /* Элементы управления */
+        .control-item {
+            flex: 1; min-width: 0; height: 40px;
+            box-sizing: border-box; background: #fff;
+            border: 1px solid #ccc; border-radius: 8px;
+            font-size: 13px; font-weight: bold; color: #333;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.2s; position: relative;
+            text-align: center; padding: 0 4px;
+        }
+        select.control-item {
+            -webkit-appearance: none; -moz-appearance: none; appearance: none;
+        }
+        .control-item.active { background: #2196F3 !important; color: white; border-color: #0d47a1; }
+        .control-item:active { background: #e0e0e0; }
+        
+        /* Информационные и специальные кнопки */
+        #sumDisplay { background: #fce4ec; color: #d81b60; border-color: #f8bbd0; cursor: default; font-size: 14px; }
+        .confirm-btn { background: #4CAF50 !important; color: white; border-color: #388E3C; font-size: 16px; }
+        
+        /* Выпадающие контейнеры */
+        .dropdown-menu {
+            display: none; position: absolute; top: 42px; left: 0; width: 220px;
+            background: white; border: 1px solid #ccc; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 10px; box-sizing: border-box;
+            text-align: left; z-index: 110; max-height: 300px; overflow-y: auto;
+        }
+        .show { display: block; }
+        
+        /* Стили элементов внутри выпадающих списков */
+        .dropdown-menu label { font-size: 11px; font-weight: bold; color: #666; display: block; margin-bottom: 5px; }
+        .point-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+        .point-row span { font-weight: bold; width: 20px; }
+        .point-row input { width: 50px; padding: 3px; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; }
+        .delete-btn { background: #ff5252; color: white; border: none; border-radius: 4px; width: 20px; height: 20px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; }
+
+        canvas { display: block; background: #fff; touch-action: none; }
+    </style>
+</head>
+<body>
+
+<div id="nav-container">
+    <!-- Первая полоса -->
+    <div class="nav-row">
+        <div class="control-item" onclick="undo()">↩ Отм.</div>
+        <div class="control-item mode-btn" onclick="setMode('connect', this)">🔗 Соединить</div>
+        <div class="control-item mode-btn" onclick="setMode('sum', this)">📏 Выбрать</div>
+        <select class="control-item" id="optModeSelect" onchange="handleOptModeChange(this)">
+            <option value="" selected disabled>💡 Экономия...</option>
+            <option value="fuel">Экономия топлива</option>
+            <option value="mat">Экономия материалов</option>
+        </select>
+    </div>
+    <!-- Вторая полоса -->
+    <div class="nav-row">
+        <div class="control-item" onclick="toggleDropdown('bgDropdown', event)">🖼 Фон
+            <div id="bgDropdown" class="dropdown-menu" onclick="event.stopPropagation()">
+                <label>Загрузить фото:</label>
+                <input type="file" id="bgUpload" accept="image/*" style="width:100%; margin-bottom:8px;">
+                <label>Прозрачность:</label>
+                <input type="range" id="opacityRange" min="0" max="1" step="0.1" value="1" style="width:100%">
+                <button class="control-item" onclick="sendToTelegram()" style="margin-top:10px; width:100%; height:32px; background:#0088cc; color:white; border:none;">📤 В Telegram</button>
+            </div>
+        </div>
+        <div class="control-item" id="sumDisplay">Σ: 0</div>
+        <div class="control-item" onclick="toggleDropdown('pointsDropdown', event)">📍 Точки
+            <div id="pointsDropdown" class="dropdown-menu" onclick="event.stopPropagation()">
+                <div id="pointsListContainer"></div>
+            </div>
+        </div>
+        <div class="control-item confirm-btn" onclick="confirmAction()">✅</div>
+    </div>
+</div>
+
+<canvas id="cvs"></canvas>
+
+<script>
+const canvas = document.getElementById('cvs');
+const ctx = canvas.getContext('2d');
+const sumDisplay = document.getElementById('sumDisplay');
+const pointsListContainer = document.getElementById('pointsListContainer');
+
+let points = [], lines = [], groups = [], history = [];
+let mode = null, selected = [], clickedLines = [], dragged = null;
+let bgImage = null, bgOpacity = 1;
+
+function resizeCanvas() {
+    canvas.width = window.innerWidth;
+    canvas.height = window.innerHeight;
+    draw();
+}
+window.addEventListener('resize', resizeCanvas);
+setTimeout(resizeCanvas, 100);
+
+function toggleDropdown(id, e) {
+    e.stopPropagation();
+    const target = document.getElementById(id);
+    const isOpen = target.classList.contains('show');
+    closeAllDropdowns();
+    if (!isOpen) target.classList.add('show');
+}
+
+function closeAllDropdowns() {
+    document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show'));
+}
+window.addEventListener('click', closeAllDropdowns);
+
+function setMode(newMode, el) {
+    closeAllDropdowns();
+    mode = (mode === newMode) ? null : newMode;
+    selected = [];
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('optModeSelect').classList.remove('active');
+    
+    if (mode && el) el.classList.add('active');
+    draw();
+}
+
+function handleOptModeChange(select) {
+    closeAllDropdowns();
+    const val = select.value;
+    if(val) {
+        mode = val;
+        selected = [];
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        select.classList.add('active');
+    }
+    draw();
+}
+
+const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+function getFermatPoint(A, B, C) {
+    const d = dist;
+    const ang = (p1, v, p2) => {
+        const a=d(v,p1), b=d(v,p2), c=d(p1,p2);
+        if(a*b === 0) return 0;
+        return Math.acos(Math.max(-1, Math.min(1, (a*a+b*b-c*c)/(2*a*b))));
+    };
+    if (ang(B,A,C) >= 2.094) return {x: A.x, y: A.y};
+    if (ang(A,B,C) >= 2.094) return {x: B.x, y: B.y};
+    if (ang(A,C,B) >= 2.094) return {x: C.x, y: C.y};
+
+    const getEqui = (p1, p2, pRef) => {
+        const dx = p2.x - p1.x, dy = p2.y - p1.y;
+        const s32 = Math.sqrt(3)/2;
+        const m = {x: (p1.x+p2.x)/2, y: (p1.y+p2.y)/2};
+        const c1 = {x: m.x - dy*s32, y: m.y + dx*s32}, c2 = {x: m.x + dy*s32, y: m.y - dx*s32};
+        return d(c1, pRef) > d(c2, pRef) ? c1 : c2;
+    };
+    const E1 = getEqui(A, B, C), E2 = getEqui(B, C, A);
+    const intersect = (p1, p2, p3, p4) => {
+        const den = (p4.y-p3.y)*(p2.x-p1.x)-(p4.x-p3.x)*(p2.y-p1.y);
+        if(Math.abs(den) < 0.1) return {x: p1.x, y: p1.y};
+        const ua = ((p4.x-p3.x)*(p1.y-p3.y)-(p4.y-p3.y)*(p1.x-p3.x))/den;
+        return {x: p1.x + ua*(p2.x-p1.x), y: p1.y + ua*(p2.y-p1.y)};
+    };
+    return intersect(A, E2, C, E1);
+}
+
+function sortPoints(pts) {
+    const c = pts.reduce((a, b) => ({x: a.x + b.x/pts.length, y: a.y + b.y/pts.length}), {x:0, y:0});
+    return [...pts].sort((a, b) => Math.atan2(a.y - c.y, a.x - c.x) - Math.atan2(b.y - c.y, b.x - c.x));
+}
+
+// ВОЗВРАЩЕННЫЙ И СТАБИЛИЗИРОВАННЫЙ АЛГОРИТМ ИЗ V11 С ПОДДЕРЖКОЙ 5-6 ТОЧЕК
+function renderSteinerGroup(g) {
+    ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
+    let totalLen = 0;
+
+    if (g.length === 3) {
+        const F = getFermatPoint(g[0], g[1], g[2]);
+        g.forEach(p => { 
+            ctx.beginPath(); ctx.moveTo(p.x, p.y); ctx.lineTo(F.x, F.y); ctx.stroke(); 
+            totalLen += dist(p, F);
+        });
+    } else if (g.length === 4) {
+        const s = sortPoints(g);
+        const build = (p0, p1, p2, p3) => {
+            let s1 = {x: (p0.x+p1.x)/2, y: (p0.y+p1.y)/2}, s2 = {x: (p2.x+p3.x)/2, y: (p2.y+p3.y)/2};
+            for(let i=0; i<15; i++) { s1 = getFermatPoint(p0, p1, s2); s2 = getFermatPoint(p2, p3, s1); }
+            return {s1, s2, len: dist(p0,s1)+dist(p1,s1)+dist(s1,s2)+dist(s2,p2)+dist(s2,p3)};
+        };
+        const b1 = build(s[0], s[1], s[2], s[3]), b2 = build(s[1], s[2], s[3], s[0]);
+        const best = b1.len < b2.len ? b1 : b2;
+        const p = b1.len < b2.len ? [s[0], s[1], s[2], s[3]] : [s[1], s[2], s[3], s[0]];
+        [[p[0],best.s1],[p[1],best.s1],[best.s1,best.s2],[best.s2,p[2]],[best.s2,p[3]]].forEach(pair => {
+            ctx.beginPath(); ctx.moveTo(pair[0].x, pair[0].y); ctx.lineTo(pair[1].x, pair[1].y); ctx.stroke();
+        });
+        totalLen = best.len;
+    } else if (g.length >= 5) {
+        // Точный расчет подмножеств + итерационная утяжка для 5 и 6 точек
+        const s = sortPoints(g);
+        let sNodes = [];
+        for (let i = 0; i < s.length - 2; i++) {
+            sNodes.push({ x: (s[i].x + s[i+1].x + s[i+2].x)/3, y: (s[i].y + s[i+1].y + s[i+2].y)/3 });
+        }
+        for (let iter = 0; iter < 100; iter++) {
+            sNodes.forEach((sn, idx) => {
+                let left = idx === 0 ? s[0] : sNodes[idx - 1];
+                let right = idx === sNodes.length - 1 ? s[s.length - 1] : sNodes[idx + 1];
+                let side = s[idx + 1];
+                let f = getFermatPoint(left, right, side);
+                sn.x = f.x; sn.y = f.y;
+            });
+        }
+        // Отрисовка сгенерированной топологии
+        for (let i = 0; i < sNodes.length; i++) {
+            if (i === 0) {
+                ctx.beginPath(); ctx.moveTo(s[0].x, s[0].y); ctx.lineTo(sNodes[0].x, sNodes[0].y); ctx.stroke();
+                totalLen += dist(s[0], sNodes[0]);
+            }
+            ctx.beginPath(); ctx.moveTo(s[i+1].x, s[i+1].y); ctx.lineTo(sNodes[i].x, sNodes[i].y); ctx.stroke();
+            totalLen += dist(s[i+1], sNodes[i]);
+            
+            if (i < sNodes.length - 1) {
+                ctx.beginPath(); ctx.moveTo(sNodes[i].x, sNodes[i].y); ctx.lineTo(sNodes[i+1].x, sNodes[i+1].y); ctx.stroke();
+                totalLen += dist(sNodes[i], sNodes[i+1]);
+            } else {
+                ctx.beginPath(); ctx.moveTo(s[s.length-1].x, s[s.length-1].y); ctx.lineTo(sNodes[i].x, sNodes[i].y); ctx.stroke();
+                totalLen += dist(s[s.length-1], sNodes[i]);
+            }
+        }
+    }
+    return totalLen;
+}
+
+function draw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (bgImage) {
+        ctx.globalAlpha = bgOpacity;
+        const r = Math.min(canvas.width/bgImage.width, canvas.height/bgImage.height);
+        ctx.drawImage(bgImage, (canvas.width-bgImage.width*r)/2, (canvas.height-bgImage.height*r)/2, bgImage.width*r, bgImage.height*r);
+        ctx.globalAlpha = 1.0;
+    }
+
+    // Синие и Зеленые линии
+    lines.forEach(l => {
+        ctx.beginPath(); ctx.moveTo(l.p1.x, l.p1.y); ctx.lineTo(l.p2.x, l.p2.y);
+        const isSel = clickedLines.includes(l);
+        ctx.strokeStyle = isSel ? 'red' : l.color;
+        ctx.lineWidth = isSel ? 5 : 2;
+        ctx.stroke();
+    });
+
+    // Отрисовка черных групп Штейнера
+    groups.forEach((g) => {
+        renderSteinerGroup(g);
+    });
+
+    // Отрисовка точек
+    points.forEach(p => {
+        ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI*2);
+        ctx.fillStyle = selected.includes(p) ? '#FF9800' : '#2196F3';
+        ctx.fill(); ctx.fillStyle = '#000'; ctx.font = "bold 14px Arial";
+        ctx.fillText(p.label, p.x + 14, p.y - 14);
+    });
+
+    // Мгновенный и точный динамический пересчет суммы выделенных линий
+    if (clickedLines.length > 0) {
+        let t = clickedLines.reduce((s, l) => s + dist(l.p1, l.p2), 0);
+        sumDisplay.innerText = "Σ: " + Math.round(t);
+    } else { 
+        sumDisplay.innerText = "Σ: 0"; 
+    }
+    
+    updatePointsDropdownUI();
+}
+
+function updatePointsDropdownUI() {
+    pointsListContainer.innerHTML = points.length === 0 ? '<div style="font-size:12px;color:#aaa">Нет точек</div>' : '';
+    points.forEach((p, i) => {
+        const row = document.createElement('div');
+        row.className = 'point-row';
+        row.innerHTML = '<span>' + p.label + '</span>' +
+        '<input type="number" value="' + Math.round(p.x) + '" oninput="points[' + i + '].x=Number(this.value);draw()">' +
+        '<input type="number" value="' + Math.round(p.y) + '" oninput="points[' + i + '].y=Number(this.value);draw()">' +
+        '<button class="delete-btn" onclick="deletePoint(' + i + ', event)">×</button>';
+        pointsListContainer.appendChild(row);
+    });
+}
+
+function deletePoint(index, e) {
+    e.stopPropagation();
+    save();
+    const removedPoint = points[index];
+    points.splice(index, 1);
+    
+    lines = lines.filter(l => l.p1 !== removedPoint && l.p2 !== removedPoint);
+    groups = groups.filter(g => !g.includes(removedPoint));
+    clickedLines = clickedLines.filter(l => l.p1 !== removedPoint && l.p2 !== removedPoint);
+    selected = selected.filter(p => p !== removedPoint);
+    
+    points.forEach((p, idx) => { p.label = String.fromCharCode(65 + idx); });
+    draw();
+}
+
+function startAction(e) {
+    if (e.clientY < 90) return; // Игнорируем клики по полосам меню
+
+    const r = canvas.getBoundingClientRect();
+    const x = (e.clientX || (e.touches && e.touches[0].clientX)) - r.left;
+    const y = (e.clientY || (e.touches && e.touches[0].clientY)) - r.top;
+    const hp = points.find(p => dist(p, {x, y}) < 22);
+
+    if (mode === 'sum') {
+        const hl = lines.find(l => distToSeg({x,y}, l.p1, l.p2) < 15);
+        if (hl) {
+            const i = clickedLines.indexOf(hl);
+            if (i > -1) clickedLines.splice(i, 1); else clickedLines.push(hl);
+            draw(); return;
+        }
+    }
+
+    if (hp) {
+        dragged = hp;
+        if (mode && mode !== 'sum') {
+            if (!selected.includes(hp)) {
+                selected.push(hp);
+                if (mode === 'fuel') { save(); selected.forEach(p => { if(p!==hp) lines.push({p1:p, p2:hp, color:'green'}); }); }
+                if (mode === 'connect' && selected.length === 2) { 
+                    save(); lines.push({p1:selected[0], p2:selected[1], color:'blue'}); selected = []; 
+                }
+            }
+        }
+        window.addEventListener('mousemove', drag); window.addEventListener('mouseup', stop);
+        window.addEventListener('touchmove', drag, {passive: false}); window.addEventListener('touchend', stop);
+    } else if (!mode) {
+        save(); points.push({x, y, label: String.fromCharCode(65 + points.length)});
+    }
+    draw();
+}
+
+function drag(e) {
+    if (!dragged) return;
+    const ev = e.touches ? e.touches[0] : e;
+    const r = canvas.getBoundingClientRect();
+    dragged.x = ev.clientX - r.left; 
+    dragged.y = ev.clientY - r.top;
+    draw();
+}
+
+function stop() { dragged = null; }
+
+function confirmAction() {
+    if (selected.length >= 2) {
+        save();
+        if (mode === 'mat') {
+            groups.push([...selected]);
+        }
+        selected = [];
+        document.getElementById('optModeSelect').value = "";
+        document.getElementById('optModeSelect').classList.remove('active');
+        mode = null;
+        draw();
+    }
+}
+
+function save() { history.push(JSON.stringify({points, lines, groups})); if(history.length>30) history.shift(); }
+function undo() { if(history.length>0) { const s = JSON.parse(history.pop()); points=s.points; lines=s.lines; groups=s.groups; clickedLines=[]; draw(); } }
+
+function distToSeg(p, v, w) {
+    const l2 = Math.pow(dist(v, w), 2);
+    if (l2 === 0) return dist(p, v);
+    let t = Math.max(0, Math.min(1, ((p.x-v.x)*(w.x-v.x)+(p.y-v.y)*(w.y-v.y))/l2));
+    return dist(p, {x: v.x+t*(w.x-v.x), y: v.y+t*(w.y-v.y)});
+}
+
+async function sendToTelegram() {
+    closeAllDropdowns();
+    canvas.toBlob(async (blob) => {
+        const formData = new FormData();
+        formData.append('photo', blob, 'map.png');
+        formData.append('caption', 'Чертеж.\nКоличество точек: ' + points.length);
+        try {
+            const response = await fetch('send.php', { method: 'POST', body: formData });
+            if (response.ok) alert("Успешно отправлено в Telegram!");
+            else alert("Ошибка сервера при отправке.");
+        } catch (e) { alert("Ошибка сети."); }
+    }, 'image/png');
+}
+
+document.getElementById('bgUpload').onchange = e => {
+    closeAllDropdowns();
+    const reader = new FileReader();
+    reader.onload = ev => { const img = new Image(); img.onload = () => { bgImage = img; draw(); }; img.src = ev.target.result; };
+    reader.readAsDataURL(e.target.files[0]);
+};
+document.getElementById('opacityRange').oninput = e => { bgOpacity = e.target.value; draw(); };
+
+canvas.addEventListener('mousedown', startAction);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); startAction(e); });
+</script>
+</body>
+</html>
