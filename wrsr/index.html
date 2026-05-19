@@ -3,23 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Геометрический Оптимизатор v18</title>
+    <title>Геометрический Оптимизатор v19</title>
     <style>
         body, html { margin: 0; padding: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100%; background: #f0f0f0; user-select: none; }
         
-        /* Двухполосное верхнее меню */
         #nav-container {
             position: absolute; top: 0; left: 0; width: 100%;
             background: rgba(255, 255, 255, 0.92);
             box-shadow: 0 2px 15px rgba(0,0,0,0.1);
             z-index: 100; box-sizing: border-box; padding: 4px;
         }
-        .nav-row {
-            display: flex; gap: 4px; margin-bottom: 4px; width: 100%;
-        }
+        .nav-row { display: flex; gap: 4px; margin-bottom: 4px; width: 100%; }
         .nav-row:last-child { margin-bottom: 0; }
         
-        /* Элементы управления */
         .control-item {
             flex: 1; min-width: 0; height: 40px;
             box-sizing: border-box; background: #fff;
@@ -29,30 +25,25 @@
             cursor: pointer; transition: all 0.2s; position: relative;
             text-align: center; padding: 0 4px;
         }
-        select.control-item {
-            -webkit-appearance: none; -moz-appearance: none; appearance: none;
-        }
+        select.control-item { -webkit-appearance: none; -moz-appearance: none; appearance: none; }
         .control-item.active { background: #2196F3 !important; color: white; border-color: #0d47a1; }
         .control-item:active { background: #e0e0e0; }
         
-        /* Информационные и специальные кнопки */
         #sumDisplay { background: #fce4ec; color: #d81b60; border-color: #f8bbd0; cursor: default; font-size: 14px; }
         .confirm-btn { background: #4CAF50 !important; color: white; border-color: #388E3C; font-size: 16px; }
         
-        /* Выпадающие контейнеры */
         .dropdown-menu {
-            display: none; position: absolute; top: 42px; left: 0; width: 220px;
+            display: none; position: absolute; top: 42px; left: 0; width: 240px;
             background: white; border: 1px solid #ccc; border-radius: 8px;
             box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 10px; box-sizing: border-box;
-            text-align: left; z-index: 110; max-height: 300px; overflow-y: auto;
+            text-align: left; z-index: 110; max-height: 350px; overflow-y: auto;
         }
         .show { display: block; }
         
-        /* Стили элементов внутри выпадающих списков */
         .dropdown-menu label { font-size: 11px; font-weight: bold; color: #666; display: block; margin-bottom: 5px; }
         .point-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
-        .point-row span { font-weight: bold; width: 20px; }
-        .point-row input { width: 50px; padding: 3px; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; }
+        .point-row span { font-weight: bold; width: 20px; font-size: 13px; }
+        .point-row input { width: 55px; padding: 3px; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; }
         .delete-btn { background: #ff5252; color: white; border: none; border-radius: 4px; width: 20px; height: 20px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; }
 
         canvas { display: block; background: #fff; touch-action: none; }
@@ -61,7 +52,6 @@
 <body>
 
 <div id="nav-container">
-    <!-- Первая полоса -->
     <div class="nav-row">
         <div class="control-item" onclick="undo()">↩ Отм.</div>
         <div class="control-item mode-btn" onclick="setMode('connect', this)">🔗 Соединить</div>
@@ -72,7 +62,6 @@
             <option value="mat">Экономия материалов</option>
         </select>
     </div>
-    <!-- Вторая полоса -->
     <div class="nav-row">
         <div class="control-item" onclick="toggleDropdown('bgDropdown', event)">🖼 Фон
             <div id="bgDropdown" class="dropdown-menu" onclick="event.stopPropagation()">
@@ -184,7 +173,6 @@ function sortPoints(pts) {
     return [...pts].sort((a, b) => Math.atan2(a.y - c.y, a.x - c.x) - Math.atan2(b.y - c.y, b.x - c.x));
 }
 
-// ВОЗВРАЩЕННЫЙ И СТАБИЛИЗИРОВАННЫЙ АЛГОРИТМ ИЗ V11 С ПОДДЕРЖКОЙ 5-6 ТОЧЕК
 function renderSteinerGroup(g) {
     ctx.strokeStyle = '#000'; ctx.lineWidth = 2.5;
     let totalLen = 0;
@@ -210,7 +198,6 @@ function renderSteinerGroup(g) {
         });
         totalLen = best.len;
     } else if (g.length >= 5) {
-        // Точный расчет подмножеств + итерационная утяжка для 5 и 6 точек
         const s = sortPoints(g);
         let sNodes = [];
         for (let i = 0; i < s.length - 2; i++) {
@@ -225,7 +212,6 @@ function renderSteinerGroup(g) {
                 sn.x = f.x; sn.y = f.y;
             });
         }
-        // Отрисовка сгенерированной топологии
         for (let i = 0; i < sNodes.length; i++) {
             if (i === 0) {
                 ctx.beginPath(); ctx.moveTo(s[0].x, s[0].y); ctx.lineTo(sNodes[0].x, sNodes[0].y); ctx.stroke();
@@ -255,7 +241,6 @@ function draw() {
         ctx.globalAlpha = 1.0;
     }
 
-    // Синие и Зеленые линии
     lines.forEach(l => {
         ctx.beginPath(); ctx.moveTo(l.p1.x, l.p1.y); ctx.lineTo(l.p2.x, l.p2.y);
         const isSel = clickedLines.includes(l);
@@ -264,12 +249,15 @@ function draw() {
         ctx.stroke();
     });
 
-    // Отрисовка черных групп Штейнера
+    let groupLengths = [];
     groups.forEach((g) => {
-        renderSteinerGroup(g);
+        let len = renderSteinerGroup(g);
+        groupLengths.push({
+            labels: g.map(p => p.label).join(''),
+            len: Math.round(len)
+        });
     });
 
-    // Отрисовка точек
     points.forEach(p => {
         ctx.beginPath(); ctx.arc(p.x, p.y, 9, 0, Math.PI*2);
         ctx.fillStyle = selected.includes(p) ? '#FF9800' : '#2196F3';
@@ -277,7 +265,6 @@ function draw() {
         ctx.fillText(p.label, p.x + 14, p.y - 14);
     });
 
-    // Мгновенный и точный динамический пересчет суммы выделенных линий
     if (clickedLines.length > 0) {
         let t = clickedLines.reduce((s, l) => s + dist(l.p1, l.p2), 0);
         sumDisplay.innerText = "Σ: " + Math.round(t);
@@ -285,11 +272,39 @@ function draw() {
         sumDisplay.innerText = "Σ: 0"; 
     }
     
-    updatePointsDropdownUI();
+    updatePointsDropdownUI(groupLengths);
 }
 
-function updatePointsDropdownUI() {
-    pointsListContainer.innerHTML = points.length === 0 ? '<div style="font-size:12px;color:#aaa">Нет точек</div>' : '';
+function updatePointsDropdownUI(groupLengths = []) {
+    pointsListContainer.innerHTML = '';
+
+    if (groupLengths.length > 0) {
+        const matHeader = document.createElement('div');
+        matHeader.style = 'font-weight:bold; font-size:12px; color:#000; margin-bottom:5px; border-bottom:2px solid #000; padding-bottom:2px;';
+        matHeader.innerText = 'Сеть Штейнера (Мат):';
+        pointsListContainer.appendChild(matHeader);
+
+        groupLengths.forEach(g => {
+            const groupRow = document.createElement('div');
+            groupRow.style = 'font-size:12px; padding:4px; margin-bottom:6px; background:#e8f5e9; border-left:4px solid #4CAF50; border-radius:4px; display:flex; justify-content:space-between; font-weight:bold;';
+            groupRow.innerHTML = '<span>' + g.labels + ':</span><span style="color:#d81b60;">' + g.len + '</span>';
+            pointsListContainer.appendChild(groupRow);
+        });
+    }
+
+    const pointsHeader = document.createElement('div');
+    pointsHeader.style = 'font-weight:bold; font-size:11px; color:#666; margin:8px 0 4px 0; text-transform:uppercase;';
+    pointsHeader.innerText = 'Координаты точек:';
+    pointsListContainer.appendChild(pointsHeader);
+
+    if (points.length === 0) {
+        const noPoints = document.createElement('div');
+        noPoints.style = 'font-size:12px;color:#aaa';
+        noPoints.innerText = 'Нет точек';
+        pointsListContainer.appendChild(noPoints);
+        return;
+    }
+
     points.forEach((p, i) => {
         const row = document.createElement('div');
         row.className = 'point-row';
@@ -317,7 +332,7 @@ function deletePoint(index, e) {
 }
 
 function startAction(e) {
-    if (e.clientY < 90) return; // Игнорируем клики по полосам меню
+    if (e.clientY < 90) return;
 
     const r = canvas.getBoundingClientRect();
     const x = (e.clientX || (e.touches && e.touches[0].clientX)) - r.left;
@@ -366,9 +381,7 @@ function stop() { dragged = null; }
 function confirmAction() {
     if (selected.length >= 2) {
         save();
-        if (mode === 'mat') {
-            groups.push([...selected]);
-        }
+        if (mode === 'mat') { groups.push([...selected]); }
         selected = [];
         document.getElementById('optModeSelect').value = "";
         document.getElementById('optModeSelect').classList.remove('active');
