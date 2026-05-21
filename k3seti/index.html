@@ -1,0 +1,569 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Геометрический Оптимизатор v3.0 (Fast Solver)</title>
+    <style>
+        body, html { margin: 0; padding: 0; overflow: hidden; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100%; background: #f0f0f0; user-select: none; }
+        
+        #nav-container {
+            position: absolute; top: 0; left: 0; width: 100%;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 2px 15px rgba(0,0,0,0.1);
+            z-index: 100; box-sizing: border-box; padding: 4px;
+        }
+        .nav-row { display: flex; gap: 4px; margin-bottom: 4px; width: 100%; }
+        .nav-row:last-child { margin-bottom: 0; }
+        
+        .control-item {
+            flex: 1; min-width: 0; height: 40px;
+            box-sizing: border-box; background: #fff;
+            border: 1px solid #ccc; border-radius: 8px;
+            font-size: 13px; font-weight: bold; color: #333;
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer; transition: all 0.2s; position: relative;
+            text-align: center; padding: 0 4px;
+        }
+        select.control-item { -webkit-appearance: none; -moz-appearance: none; appearance: none; }
+        .control-item.active { background: #2196F3 !important; color: white; border-color: #0d47a1; }
+        .control-item:active { background: #e0e0e0; }
+        
+        #sumDisplay { background: #fce4ec; color: #d81b60; border-color: #f8bbd0; cursor: default; font-size: 14px; }
+        .confirm-btn { background: #4CAF50 !important; color: white; border-color: #388E3C; font-size: 16px; }
+        
+        .dropdown-menu {
+            display: none; position: absolute; top: 42px; left: 0; width: 240px;
+            background: white; border: 1px solid #ccc; border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15); padding: 10px; box-sizing: border-box;
+            text-align: left; z-index: 110; max-height: 350px; overflow-y: auto;
+        }
+        .show { display: block; }
+        
+        .dropdown-menu label { font-size: 11px; font-weight: bold; color: #666; display: block; margin-bottom: 5px; }
+        .point-row { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; border-bottom: 1px solid #eee; padding-bottom: 4px; }
+        .point-row span { font-weight: bold; width: 20px; font-size: 13px; }
+        .point-row input { width: 55px; padding: 3px; border: 1px solid #ccc; border-radius: 4px; font-size: 11px; }
+        .delete-btn { background: #ff5252; color: white; border: none; border-radius: 4px; width: 20px; height: 20px; cursor: pointer; font-weight: bold; display: flex; align-items: center; justify-content: center; }
+
+        canvas { display: block; background: #fff; touch-action: none; }
+    </style>
+</head>
+<body>
+
+<div id="nav-container">
+    <div class="nav-row">
+        <div class="control-item" onclick="undo()">↩ Отм.</div>
+        <div class="control-item mode-btn" onclick="setMode('connect', this)">🔗 Соединить</div>
+        <div class="control-item mode-btn" onclick="setMode('sum', this)">📏 Выбрать</div>
+        <select class="control-item" id="optModeSelect" onchange="handleOptModeChange(this)">
+            <option value="" selected disabled>💡 Экономия...</option>
+            <option value="fuel">Экономия топлива</option>
+            <option value="mat">Экономия материалов</option>
+        </select>
+    </div>
+    <div class="nav-row">
+        <div class="control-item" onclick="toggleDropdown('bgDropdown', event)">🖼 Фон
+            <div id="bgDropdown" class="dropdown-menu" onclick="event.stopPropagation()">
+                <label>Загрузить фото:</label>
+                <input type="file" id="bgUpload" accept="image/*" style="width:100%; margin-bottom:8px;">
+                <label>Прозрачность:</label>
+                <input type="range" id="opacityRange" min="0" max="1" step="0.1" value="1" style="width:100%">
+                <button class="control-item" onclick="sendToTelegram()" style="margin-top:10px; width:100%; height:32px; background:#0088cc; color:white; border:none;">📤 В Telegram</button>
+            </div>
+        </div>
+        <div class="control-item" id="sumDisplay">Σ: 0</div>
+        <div class="control-item" onclick="toggleDropdown('pointsDropdown', event)">📍 Точки
+            <div id="pointsDropdown" class="dropdown-menu" onclick="event.stopPropagation()">
+                <div id="pointsListContainer"></div>
+            </div>
+        </div>
+        <div class="control-item confirm-btn" onclick="confirmAction()">✅</div>
+    </div>
+</div>
+
+<canvas id="cvs"></canvas>
+
+<script>
+const canvas = document.getElementById('cvs');
+const ctx = canvas.getContext('2d');
+const sumDisplay = document.getElementById('sumDisplay');
+const pointsListContainer = document.getElementById('pointsListContainer');
+
+// Исходные 9 точек
+let points = [
+    { id: 1, label: "A", x: 880, y: 416 },
+    { id: 2, label: "B", x: 960, y: 416 },
+    { id: 3, label: "C", x: 1040, y: 416 },
+    { id: 4, label: "D", x: 920, y: 485 },
+    { id: 5, label: "E", x: 1000, y: 485 },
+    { id: 6, label: "F", x: 1080, y: 485 },
+    { id: 7, label: "G", x: 880, y: 554 },
+    { id: 8, label: "H", x: 960, y: 554 },
+    { id: 9, label: "I", x: 1040, y: 554 }
+];
+
+let pointZ = { id: 999, label: "Z", x: 994, y: 485 };
+
+let lines = [], groups = [], history = [];
+let mode = null, selected = [], clickedLines = [], dragged = null;
+let bgImage = null, bgOpacity = 1;
+
+let scale = 1, offsetX = 0, offsetY = 0, isPanning = false, startPanX = 0, startPanY = 0;
+const networkColors = ["#FF9800", "#F44336", "#4CAF50", "#0000FF", "#00FFFF", "#9C27B0"];
+
+function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; draw(); }
+window.addEventListener('resize', resizeCanvas);
+
+function toggleDropdown(id, e) {
+    e.stopPropagation();
+    const target = document.getElementById(id);
+    const isOpen = target.classList.contains('show');
+    closeAllDropdowns();
+    if (!isOpen) target.classList.add('show');
+}
+function closeAllDropdowns() { document.querySelectorAll('.dropdown-menu').forEach(d => d.classList.remove('show')); }
+window.addEventListener('click', closeAllDropdowns);
+
+function setMode(newMode, el) {
+    closeAllDropdowns();
+    mode = (mode === newMode) ? null : newMode;
+    selected = [];
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    document.getElementById('optModeSelect').classList.remove('active');
+    if (mode && el) el.classList.add('active');
+    draw();
+}
+
+function handleOptModeChange(select) {
+    closeAllDropdowns();
+    if(select.value) {
+        mode = select.value;
+        selected = [];
+        document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+        select.classList.add('active');
+    }
+    draw();
+}
+
+const dist = (p1, p2) => Math.hypot(p1.x - p2.x, p1.y - p2.y);
+
+// УЛЬТРА-БЫСТРАЯ ФУНКЦИЯ ФЕРМА БЕЗ ТРИГОНОМЕТРИИ
+function fastFermat(A, B, C) {
+    const dxAB = B.x - A.x, dyAB = B.y - A.y;
+    const dxAC = C.x - A.x, dyAC = C.y - A.y;
+    const dxBC = C.x - B.x, dyBC = C.y - B.y;
+
+    const c2 = dxAB*dxAB + dyAB*dyAB;
+    const b2 = dxAC*dxAC + dyAC*dyAC;
+    const a2 = dxBC*dxBC + dyBC*dyBC;
+
+    const a = Math.sqrt(a2), b = Math.sqrt(b2), c = Math.sqrt(c2);
+
+    if (a === 0) return {x: B.x, y: B.y};
+    if (b === 0) return {x: A.x, y: A.y};
+    if (c === 0) return {x: A.x, y: A.y};
+
+    // Если угол > 120° (cos <= -0.5), точка Ферма совпадает с вершиной
+    if (b2 + c2 - a2 <= -b * c) return {x: A.x, y: A.y};
+    if (a2 + c2 - b2 <= -a * c) return {x: B.x, y: B.y};
+    if (a2 + b2 - c2 <= -a * b) return {x: C.x, y: C.y};
+
+    const s32 = 0.8660254037844386; // sqrt(3)/2
+    const mx = (A.x + B.x) / 2, my = (A.y + B.y) / 2;
+    let E1x = mx - dyAB * s32, E1y = my + dxAB * s32;
+
+    const crossC = dxAB * dyAC - dyAB * dxAC;
+    const crossE1 = dxAB * (E1y - A.y) - dyAB * (E1x - A.x);
+    if ((crossC * crossE1) > 0) {
+        E1x = mx + dyAB * s32;
+        E1y = my - dxAB * s32;
+    }
+
+    const mx2 = (B.x + C.x) / 2, my2 = (B.y + C.y) / 2;
+    let E2x = mx2 - dyBC * s32, E2y = my2 + dxBC * s32;
+    const crossA2 = dxBC * (-dyAB) - dyBC * (-dxAB);
+    const crossE2 = dxBC * (E2y - B.y) - dyBC * (E2x - B.x);
+    if ((crossA2 * crossE2) > 0) {
+        E2x = mx2 + dyBC * s32;
+        E2y = my2 - dxBC * s32;
+    }
+
+    const den = (E1y - C.y) * (E2x - A.x) - (E1x - C.x) * (E2y - A.y);
+    if (Math.abs(den) < 1e-5) return {x: A.x, y: A.y};
+    const ua = ((E1x - C.x) * (A.y - C.y) - (E1y - C.y) * (A.x - C.x)) / den;
+    return { x: A.x + ua * (E2x - A.x), y: A.y + ua * (E2y - A.y) };
+}
+
+function fastSteiner4Len(p0, p1, p2, p3, iters) {
+    let s1 = {x: (p0.x+p1.x)/2, y: (p0.y+p1.y)/2}, s2 = {x: (p2.x+p3.x)/2, y: (p2.y+p3.y)/2};
+    for(let i=0; i<iters; i++) {
+        let ns1 = fastFermat(p0, p1, s2);
+        let ns2 = fastFermat(p2, p3, ns1);
+        s1 = ns1; s2 = ns2;
+    }
+    const dx0 = p0.x-s1.x, dy0 = p0.y-s1.y;
+    const dx1 = p1.x-s1.x, dy1 = p1.y-s1.y;
+    const dx12 = s1.x-s2.x, dy12 = s1.y-s2.y;
+    const dx2 = p2.x-s2.x, dy2 = p2.y-s2.y;
+    const dx3 = p3.x-s2.x, dy3 = p3.y-s2.y;
+    return Math.sqrt(dx0*dx0+dy0*dy0) + Math.sqrt(dx1*dx1+dy1*dy1) + Math.sqrt(dx12*dx12+dy12*dy12) + Math.sqrt(dx2*dx2+dy2*dy2) + Math.sqrt(dx3*dx3+dy3*dy3);
+}
+
+function renderSteinerGroup4(g, customColor, performDraw = true) {
+    if (g.length !== 4) return 0;
+    const buildTree = (p0, p1, p2, p3) => {
+        let s1 = {x: (p0.x+p1.x)/2, y: (p0.y+p1.y)/2}, s2 = {x: (p2.x+p3.x)/2, y: (p2.y+p3.y)/2};
+        for(let i=0; i<35; i++) { // Увеличенная точность для отрисовки
+            s1 = fastFermat(p0, p1, s2);
+            s2 = fastFermat(p2, p3, s1);
+        }
+        const dx0 = p0.x-s1.x, dy0 = p0.y-s1.y, dx1 = p1.x-s1.x, dy1 = p1.y-s1.y;
+        const dx12 = s1.x-s2.x, dy12 = s1.y-s2.y;
+        const dx2 = p2.x-s2.x, dy2 = p2.y-s2.y, dx3 = p3.x-s2.x, dy3 = p3.y-s2.y;
+        return {s1, s2, len: Math.sqrt(dx0*dx0+dy0*dy0)+Math.sqrt(dx1*dx1+dy1*dy1)+Math.sqrt(dx12*dx12+dy12*dy12)+Math.sqrt(dx2*dx2+dy2*dy2)+Math.sqrt(dx3*dx3+dy3*dy3)};
+    };
+
+    const b1 = buildTree(g[0], g[1], g[2], g[3]);
+    const b2 = buildTree(g[0], g[2], g[1], g[3]);
+    const b3 = buildTree(g[0], g[3], g[1], g[2]);
+
+    let best = b1, p = [g[0], g[1], g[2], g[3]];
+    if (b2.len < best.len) { best = b2; p = [g[0], g[2], g[1], g[3]]; }
+    if (b3.len < best.len) { best = b3; p = [g[0], g[3], g[1], g[2]]; }
+
+    if (performDraw) {
+        ctx.strokeStyle = customColor || '#000';
+        [[p[0],best.s1],[p[1],best.s1],[best.s1,best.s2],[best.s2,p[2]],[best.s2,p[3]]].forEach(pair => {
+            ctx.beginPath(); ctx.moveTo(pair[0].x, pair[0].y); ctx.lineTo(pair[1].x, pair[1].y); ctx.stroke();
+        });
+    }
+    return best.len;
+}
+
+function draw() {
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    
+    if (bgImage) {
+        ctx.save();
+        ctx.translate(offsetX, offsetY); ctx.scale(scale, scale); ctx.globalAlpha = bgOpacity;
+        const r = Math.min(canvas.width/bgImage.width, canvas.height/bgImage.height);
+        ctx.drawImage(bgImage, (canvas.width-bgImage.width*r)/2, (canvas.height-bgImage.height*r)/2, bgImage.width*r, bgImage.height*r);
+        ctx.restore();
+    }
+
+    ctx.save();
+    ctx.translate(offsetX, offsetY); ctx.scale(scale, scale);
+
+    lines.forEach(l => {
+        ctx.beginPath(); ctx.moveTo(l.p1.x, l.p1.y); ctx.lineTo(l.p2.x, l.p2.y);
+        const isSel = clickedLines.includes(l);
+        ctx.strokeStyle = isSel ? 'red' : l.color;
+        ctx.lineWidth = (isSel ? 5 : 2) / scale; ctx.stroke();
+    });
+
+    let groupLengths = [], steinerTotalSum = 0;
+
+    groups.forEach((g, index) => {
+        let color = g.color || networkColors[index % networkColors.length];
+        let fullFourGroup = [...g, pointZ];
+        ctx.lineWidth = 3.5 / scale;
+        let len = renderSteinerGroup4(fullFourGroup, color, true);
+        steinerTotalSum += len;
+        
+        groupLengths.push({ labels: g.map(p => p.label).join('') + "Z", len: Math.round(len * 10)/10, color: color });
+    });
+
+    points.forEach(p => {
+        ctx.beginPath(); ctx.arc(p.x, p.y, 9 / scale, 0, Math.PI*2);
+        ctx.fillStyle = selected.includes(p) ? '#FF9800' : '#2196F3';
+        ctx.fill(); ctx.lineWidth = 1.5 / scale; ctx.strokeStyle = '#fff'; ctx.stroke();
+        ctx.fillStyle = '#000'; ctx.font = "bold " + Math.max(10, 14 / scale) + "px Arial";
+        ctx.fillText(p.label, p.x + 14 / scale, p.y - 14 / scale);
+    });
+
+    if (points.length === 9) {
+        ctx.beginPath(); ctx.arc(pointZ.x, pointZ.y, 11 / scale, 0, Math.PI*2);
+        ctx.fillStyle = '#9C27B0'; 
+        ctx.fill(); ctx.lineWidth = 2 / scale; ctx.strokeStyle = '#fff'; ctx.stroke();
+        ctx.fillStyle = '#000'; ctx.font = "bold " + Math.max(12, 16 / scale) + "px Arial";
+        ctx.fillText(pointZ.label, pointZ.x + 15 / scale, pointZ.y - 15 / scale);
+    }
+    ctx.restore();
+
+    if (groups.length > 0) sumDisplay.innerText = "Σ: " + (Math.round(steinerTotalSum * 10) / 10);
+    else if (clickedLines.length > 0) sumDisplay.innerText = "Σ: " + Math.round(clickedLines.reduce((s, l) => s + dist(l.p1, l.p2), 0));
+    else sumDisplay.innerText = "Σ: 0";
+    
+    updatePointsDropdownUI(groupLengths);
+}
+
+function updatePointsDropdownUI(groupLengths = []) {
+    pointsListContainer.innerHTML = '';
+    if (groupLengths.length > 0) {
+        const matHeader = document.createElement('div');
+        matHeader.style = 'font-weight:bold; font-size:12px; color:#000; margin-bottom:5px; border-bottom:2px solid #000; padding-bottom:2px;';
+        matHeader.innerText = '4-точечные сети:';
+        pointsListContainer.appendChild(matHeader);
+        groupLengths.forEach(g => {
+            const groupRow = document.createElement('div');
+            groupRow.style = 'font-size:12px; padding:4px; margin-bottom:6px; background:#f5f5f5; border-left:5px solid ' + g.color + '; border-radius:4px; display:flex; gap:8px; font-weight:bold;';
+            groupRow.innerHTML = '<span>' + g.labels + ':</span><span style="color:#d81b60;">' + g.len + ' px</span>';
+            pointsListContainer.appendChild(groupRow);
+        });
+    }
+    const pointsHeader = document.createElement('div');
+    pointsHeader.style = 'font-weight:bold; font-size:11px; color:#666; margin:8px 0 4px 0; text-transform:uppercase;';
+    pointsHeader.innerText = 'Координаты точек:';
+    pointsListContainer.appendChild(pointsHeader);
+
+    if (points.length === 9) {
+        const zRow = document.createElement('div');
+        zRow.className = 'point-row';
+        zRow.style = 'background: #f3e5f5; border-radius: 4px; padding: 2px 4px;';
+        zRow.innerHTML = '<span style="color:#9C27B0;">Z</span><input type="number" value="' + Math.round(pointZ.x) + '" oninput="pointZ.x=Number(this.value); draw();"><input type="number" value="' + Math.round(pointZ.y) + '" oninput="pointZ.y=Number(this.value); draw();">';
+        pointsListContainer.appendChild(zRow);
+    }
+    points.forEach((p, i) => {
+        const row = document.createElement('div');
+        row.className = 'point-row';
+        row.innerHTML = '<span>' + p.label + '</span><input type="number" value="' + Math.round(p.x) + '" oninput="points[' + i + '].x=Number(this.value); recalculateAndDraw();"><input type="number" value="' + Math.round(p.y) + '" oninput="points[' + i + '].y=Number(this.value); recalculateAndDraw();"><button class="delete-btn" onclick="deletePoint(' + i + ', event)">×</button>';
+        pointsListContainer.appendChild(row);
+    });
+}
+
+function deletePoint(index, e) {
+    e.stopPropagation(); save();
+    const removedPoint = points[index];
+    points.splice(index, 1);
+    lines = lines.filter(l => l.p1 !== removedPoint && l.p2 !== removedPoint);
+    groups = groups.filter(g => !g.includes(removedPoint));
+    clickedLines = clickedLines.filter(l => l.p1 !== removedPoint && l.p2 !== removedPoint);
+    selected = selected.filter(p => p !== removedPoint);
+    points.forEach((p, idx) => { p.label = String.fromCharCode(65 + idx); });
+    recalculateAndDraw();
+}
+
+function startAction(e) {
+    if (e.clientY < 90) return;
+    const r = canvas.getBoundingClientRect();
+    const screenX = (e.clientX || (e.touches && e.touches[0].clientX)) - r.left;
+    const screenY = (e.clientY || (e.touches && e.touches[0].clientY)) - r.top;
+    const x = (screenX - offsetX) / scale, y = (screenY - offsetY) / scale;
+    const clickRadius = 22 / scale;
+    const hp = (dist(pointZ, {x, y}) < clickRadius && points.length === 9) ? pointZ : points.find(p => dist(p, {x, y}) < clickRadius);
+
+    if (mode === 'sum') {
+        const hl = lines.find(l => distToSeg({x,y}, l.p1, l.p2) < 15 / scale);
+        if (hl) { const i = clickedLines.indexOf(hl); if (i > -1) clickedLines.splice(i, 1); else clickedLines.push(hl); draw(); return; }
+    }
+
+    if (hp) { dragged = hp; window.addEventListener('mousemove', drag); window.addEventListener('mouseup', stop); window.addEventListener('touchmove', drag, {passive: false}); window.addEventListener('touchend', stop); }
+    else {
+        if (e.button === 1 || e.button === 2 || e.shiftKey || (e.touches && e.touches.length > 1)) {
+            isPanning = true; startPanX = screenX - offsetX; startPanY = screenY - offsetY;
+            window.addEventListener('mousemove', pan); window.addEventListener('mouseup', stopPan);
+        } else if (!mode && e.button === 0) {
+            save(); points.push({id: Date.now(), x, y, label: String.fromCharCode(65 + points.length)});
+            recalculateAndDraw();
+        }
+    }
+    draw();
+}
+
+function drag(e) {
+    if (!dragged) return;
+    const ev = e.touches ? e.touches[0] : e;
+    const r = canvas.getBoundingClientRect();
+    dragged.x = ((ev.clientX - r.left) - offsetX) / scale;
+    dragged.y = ((ev.clientY - r.top) - offsetY) / scale;
+    draw(); // Мгновенная отрисовка сетей БЕЗ жесткого пересчета во время тяги
+}
+
+function pan(e) { if (!isPanning) return; const r = canvas.getBoundingClientRect(); offsetX = (e.clientX - r.left) - startPanX; offsetY = (e.clientY - r.top) - startPanY; draw(); }
+function stopPan() { isPanning = false; window.removeEventListener('mousemove', pan); window.removeEventListener('mouseup', stopPan); }
+function stop() { if (dragged) recalculateAndDraw(); dragged = null; }
+
+function confirmAction() {
+    if (selected.length >= 2) {
+        save(); if (mode === 'mat') groups.push([...selected]); selected = []; document.getElementById('optModeSelect').value = ""; mode = null; draw();
+    }
+}
+
+function save() { history.push(JSON.stringify({points, lines, groups, pointZ, scale, offsetX, offsetY})); if(history.length>30) history.shift(); }
+function undo() { if(history.length>0) { const s = JSON.parse(history.pop()); points=s.points; lines=s.lines; groups=s.groups; pointZ=s.pointZ; scale=s.scale||1; offsetX=s.offsetX||0; offsetY=s.offsetY||0; clickedLines=[]; draw(); } }
+
+function distToSeg(p, v, w) {
+    const l2 = Math.pow(dist(v, w), 2);
+    if (l2 === 0) return dist(p, v);
+    let t = Math.max(0, Math.min(1, ((p.x-v.x)*(w.x-v.x)+(p.y-v.y)*(w.y-v.y))/l2));
+    return dist(p, {x: v.x+t*(w.x-v.x), y: v.y+t*(w.y-v.y)});
+}
+
+function getCombinations(arr, size) {
+    if (size === 1) return arr.map(x => [x]);
+    const result = [];
+    arr.forEach((val, i) => { getCombinations(arr.slice(i + 1), size - 1).forEach(comb => result.push([val, ...comb])); });
+    return result;
+}
+
+function getPermutations(arr) {
+    if (arr.length <= 1) return [arr];
+    const result = [];
+    for (let i = 0; i < arr.length; i++) {
+        const rest = [...arr.slice(0, i), ...arr.slice(i + 1)];
+        for (let perm of getPermutations(rest)) result.push([arr[i], ...perm]);
+    }
+    return result;
+}
+
+function evaluateTotalSystemLengthFast(zx, zy, networks, iters) {
+    let total = 0;
+    for (let i = 0; i < networks.length; i++) {
+        let g = networks[i];
+        let p0 = g[0], p1 = g[1], p2 = g[2], p3 = {x: zx, y: zy};
+        total += Math.min(
+            fastSteiner4Len(p0, p1, p2, p3, iters),
+            fastSteiner4Len(p0, p2, p1, p3, iters),
+            fastSteiner4Len(p0, p3, p1, p2, iters)
+        );
+    }
+    return total;
+}
+
+// Продвинутый алгоритм поиска с множественным стартом (Мульти-старт)
+function optimizePointZ(networks, startPoints, iters, minStep) {
+    let globalBestX = startPoints[0].x, globalBestY = startPoints[0].y, globalBestScore = Infinity;
+
+    for (let pt of startPoints) {
+        let cx = pt.x, cy = pt.y, currentStep = 45;
+        let localBestScore = evaluateTotalSystemLengthFast(cx, cy, networks, iters);
+
+        while (currentStep > minStep) {
+            let moved = false;
+            // Улучшенный набор направлений поиска (включая диагонали для плавного скольжения)
+            const directions = [{x:0, y:1}, {x:0, y:-1}, {x:1, y:0}, {x:-1, y:0}, {x:0.707, y:0.707}, {x:0.707, y:-0.707}, {x:-0.707, y:0.707}, {x:-0.707, y:-0.707}];
+            
+            for (let dir of directions) {
+                let nx = cx + dir.x * currentStep, ny = cy + dir.y * currentStep;
+                let score = evaluateTotalSystemLengthFast(nx, ny, networks, iters);
+                if (score < localBestScore) {
+                    localBestScore = score; cx = nx; cy = ny; moved = true;
+                }
+            }
+            if (!moved) currentStep *= 0.45;
+        }
+        if (localBestScore < globalBestScore) { globalBestScore = localBestScore; globalBestX = cx; globalBestY = cy; }
+    }
+    return { x: globalBestX, y: globalBestY, score: globalBestScore };
+}
+
+function recalculateAndDraw() {
+    if (points.length !== 9) { groups = []; draw(); return; }
+
+    let cx = points.reduce((s, p) => s + p.x, 0) / 9;
+    let cy = points.reduce((s, p) => s + p.y, 0) / 9;
+
+    const validConfigs = [];
+    let ptsIndices = [1, 2, 3, 4, 5, 6, 7, 8]; 
+    let c2 = getCombinations(ptsIndices, 2);
+
+    for (let r0_rest of c2) {
+        let R0 = [0, r0_rest[0], r0_rest[1]];
+        let rem1 = ptsIndices.filter(x => !r0_rest.includes(x));
+        let c3 = getCombinations(rem1, 3);
+        let r1_combs = c3.filter(c => c.includes(rem1[0]));
+
+        for (let R1 of r1_combs) {
+            let R2 = rem1.filter(x => !R1.includes(x));
+            let r1_perms = getPermutations(R1), r2_perms = getPermutations(R2);
+
+            for (let p1 of r1_perms) {
+                for (let p2 of r2_perms) {
+                    let C0 = [0, p1[0], p2[0]], C1 = [R0[1], p1[1], p2[1]], C2 = [R0[2], p1[2], p2[2]];
+                    validConfigs.push([R0, R1, R2, C0, C1, C2]);
+                }
+            }
+        }
+    }
+
+    // Этап 1: Быстрый скан всех 10,080 конфигураций в геометрическом центре
+    let evaluatedConfigs = validConfigs.map(config => {
+        let networks = config.map(indices => indices.map(idx => points[idx]));
+        return { networks, score: evaluateTotalSystemLengthFast(cx, cy, networks, 5) };
+    }).sort((a, b) => a.score - b.score);
+    
+    let top150 = evaluatedConfigs.slice(0, 150);
+
+    // Этап 2: Базовая оптимизация (один стартовый поинт) для Топ-150 кандидатов
+    for (let candidate of top150) {
+        let opt = optimizePointZ(candidate.networks, [{x: cx, y: cy}], 10, 0.5);
+        candidate.bestScore = opt.score;
+        candidate.bestZ = {x: opt.x, y: opt.y};
+    }
+    top150.sort((a, b) => a.bestScore - b.bestScore);
+    let top10 = top150.slice(0, 10);
+
+    // Этап 3: Ювелирный глобальный поиск (Multi-Start Grid) для Топ-10 лучших конфигураций
+    let globalBestScore = Infinity, globalBestNetworks = null, globalBestZ = null;
+
+    for (let candidate of top10) {
+        const bz = candidate.bestZ;
+        const startPoints = [bz, {x: bz.x-30, y: bz.y}, {x: bz.x+30, y: bz.y}, {x: bz.x, y: bz.y-30}, {x: bz.x, y: bz.y+30}];
+        
+        // 25 итераций Ферма + точность 0.005px
+        let opt = optimizePointZ(candidate.networks, startPoints, 25, 0.005); 
+        if (opt.score < globalBestScore) {
+            globalBestScore = opt.score; globalBestNetworks = candidate.networks; globalBestZ = {x: opt.x, y: opt.y};
+        }
+    }
+
+    if (globalBestNetworks) {
+        pointZ.x = globalBestZ.x; pointZ.y = globalBestZ.y;
+        groups = globalBestNetworks.map((net, idx) => {
+            let netGroup = [...net];
+            netGroup.color = networkColors[idx];
+            return netGroup;
+        });
+    } else groups = [];
+
+    draw();
+}   
+
+setTimeout(() => { resizeCanvas(); recalculateAndDraw(); }, 150);
+
+async function sendToTelegram() {
+    closeAllDropdowns();
+    canvas.toBlob(async (blob) => {
+        const formData = new FormData(); formData.append('photo', blob, 'map.png'); formData.append('caption', 'Оптимальный чертеж с точкой Z. Сумма: ' + sumDisplay.innerText);
+        try {
+            const response = await fetch('send.php', { method: 'POST', body: formData });
+            if (response.ok) alert("Успешно отправлено в Telegram!"); else alert("Ошибка сервера.");
+        } catch (e) { alert("Ошибка сети."); }
+    }, 'image/png');
+}
+
+document.getElementById('bgUpload').onchange = e => {
+    closeAllDropdowns();
+    const reader = new FileReader();
+    reader.onload = ev => { const img = new Image(); img.onload = () => { bgImage = img; draw(); }; img.src = ev.target.result; };
+    reader.readAsDataURL(e.target.files[0]);
+};
+document.getElementById('opacityRange').oninput = e => { bgOpacity = e.target.value; draw(); };
+
+canvas.addEventListener('mousedown', startAction);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); startAction(e); }, {passive: false});
+canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const r = canvas.getBoundingClientRect();
+    const mouseX = e.clientX - r.left, mouseY = e.clientY - r.top;
+    let newScale = Math.max(0.1, Math.min(scale * (e.deltaY < 0 ? 1.1 : 0.909), 15));
+    offsetX = mouseX - (mouseX - offsetX) * (newScale / scale);
+    offsetY = mouseY - (mouseY - offsetY) * (newScale / scale);
+    scale = newScale; draw();
+}, { passive: false });
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+</script>
+</body>
+</html>
