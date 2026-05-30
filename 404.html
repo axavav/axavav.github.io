@@ -1,40 +1,148 @@
 <!DOCTYPE html>
-
 <html>
-
 <head>
+    <meta charset="utf-8">
+    <title>Конвертер изображений / Перенаправление...</title>
+    <script>
+        // 1. Берем путь
+        var path = window.location.pathname;
 
-<meta charset="utf-8">
+        // 2. Убираем .html из конца, если он есть
+        var cleanPath = path.replace(/\.html$/i, "");
 
-<title>Перенаправление...</title>
+        // 3. Переводим всё в нижний регистр
+        var lowerPath = cleanPath.toLowerCase();
 
-<script>
-
-// Берем текущий путь (например, /NaMe)
-
-// 1. Берем путь
-var path = window.location.pathname;
-
-// 2. Убираем .html из конца, если он есть
-var cleanPath = path.replace(/\.html$/i, "");
-
-// 3. Переводим всё в нижний регистр
-var lowerPath = cleanPath.toLowerCase();
-
-// Если итоговый путь отличается от того, что ввел пользователь — редиректим
-if (path !== lowerPath) {
-    window.location.replace(lowerPath);
-} else {
-    document.write('<h1>Ошибка 404: Страница не найдена</h1>');
-}
-
-
-</script>
-
+        // Если итоговый путь отличается от того, что ввел пользователь — редиректим
+        if (path !== lowerPath) {
+            window.location.replace(lowerPath);
+        }
+        // Если путь правильный (совпадает с lowerPath), скрипт просто завершает работу, 
+        // и браузер спокойно отрисовывает HTML-код конвертера, расположенный ниже.
+    </script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            background-color: #f4f4f9;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        h1 {
+            font-size: 20px;
+            color: #333;
+            margin-bottom: 20px;
+        }
+        .file-input-label {
+            display: inline-block;
+            padding: 12px 24px;
+            background-color: #007bff;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-weight: bold;
+        }
+        .file-input-label:hover {
+            background-color: #0056b3;
+        }
+        input[type="file"] {
+            display: none;
+        }
+        #preview {
+            margin-top: 20px;
+            max-width: 100%;
+            border-radius: 5px;
+            display: none;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .info {
+            margin-top: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+    </style>
 </head>
-
 <body>
 
-</body>
+<div class="container">
+    <h1>Конвертер в PNG 512х512</h1>
+    
+    <label class="file-input-label">
+        Выберите фото
+        <input type="file" id="upload" accept="image/*">
+    </label>
+    
+    <p class="info">Изображение автоматически обрежется до квадрата по центру и сохранится в размере 512x512 px.</p>
+    
+    <img id="preview" alt="Превью">
+</div>
 
+<script>
+document.getElementById('upload').addEventListener('change', function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    
+    reader.onload = function(e) {
+        const img = new Image();
+        
+        img.onload = function() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 512;
+            canvas.height = 512;
+            const ctx = canvas.getContext('2d');
+
+            let srcX = 0;
+            let srcY = 0;
+            let srcSize = Math.min(img.width, img.height);
+
+            if (img.width > img.height) {
+                srcX = (img.width - img.height) / 2;
+            } else if (img.height > img.width) {
+                srcY = (img.height - img.width) / 2;
+            }
+
+            ctx.drawImage(img, srcX, srcY, srcSize, srcSize, 0, 0, 512, 512);
+
+            const dataUrl = canvas.toDataURL('image/png');
+
+            const previewImg = document.getElementById('preview');
+            previewImg.src = dataUrl;
+            previewImg.style.display = 'inline-block';
+
+            const downloadLink = document.createElement('a');
+            downloadLink.href = dataUrl;
+            
+            const originalName = file.name.substring(0, file.name.lastIndexOf('.')) || 'image';
+            downloadLink.download = originalName + '_512x512.png';
+            
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+        };
+
+        img.src = e.target.result;
+    };
+
+    reader.readAsDataURL(file);
+});
+</script>
+
+</body>
 </html>
