@@ -142,14 +142,13 @@
             background-color: var(--primary);
         }
 
-        /* Показываем превью крупно, хотя реальный холст маленький */
         #previewCanvas {
             display: block;
             margin: 20px auto 0 auto;
             width: 100%;
             max-width: 256px;
             height: auto;
-            image-rendering: pixelated; /* Чтобы в браузере не размывалось при показе */
+            image-rendering: pixelated; 
             background: #0f172a;
             border-radius: 8px;
         }
@@ -204,51 +203,37 @@ const progressText = document.getElementById('progressText');
 const canvas = document.getElementById('previewCanvas');
 const ctx = canvas.getContext('2d', { alpha: false });
 
-// Отключаем сглаживание для супер-четких пикселей
 ctx.imageSmoothingEnabled = false;
 
-// Встроенный жесткий пиксельный шрифт 3x5 (каждая цифра — массив строк-пикселей)
+// Шрифт 3x5
 const font3x5 = {
-    '0': ["###","#.#","#.#","#.#","###"],
-    '1': ["..#","..#","..#","..#","..#"],
-    '2': ["###","..#","###","#..","###"],
-    '3': ["###","..#","###","..#","###"],
-    '4': ["#.#","#.#","###","..#","..#"],
-    '5': ["###","#..","###","..#","###"],
-    '6': ["###","#..","###","#.#","###"],
-    '7': ["###","..#","..#","..#","..#"],
-    '8': ["###","#.#","###","#.#","###"],
-    '9': ["###","#.#","###","..#","###"],
-    ':': ["..",".#","..",".#",".."],
-    '.': ["..","..","..","..",".#"]
+    '0': ["###","#.#","#.#","#.#","###"], '1': ["..#","..#","..#","..#","..#"],
+    '2': ["###","..#","###","#..","###"], '3': ["###","..#","###","..#","###"],
+    '4': ["#.#","#.#","###","..#","..#"], '5': ["###","#..","###","..#","###"],
+    '6': ["###","#..","###","#.#","###"], '7': ["###","..#","..#","..#","..#"],
+    '8': ["###","#.#","###","#.#","###"], '9': ["###","#.#","###","..#","###"],
+    ':': ["..",".#","..",".#",".."], '.': ["..","..","..","..",".#"]
 };
 
-// Функция отрисовки пиксельного текста
 function drawPixelText(text, startX, startY, pixelSize) {
     let currentX = startX;
     for (let char of text) {
         const glyph = font3x5[char] || ["...", "...", "...", "...", "..."];
         const charWidth = glyph[0].length;
-
         for (let row = 0; row < 5; row++) {
             for (let col = 0; col < charWidth; col++) {
                 if (glyph[row][col] === '#') {
-                    ctx.fillRect(
-                        currentX + col * pixelSize, 
-                        startY + row * pixelSize, 
-                        pixelSize, 
-                        pixelSize
-                    );
+                    ctx.fillRect(currentX + col * pixelSize, startY + row * pixelSize, pixelSize, pixelSize);
                 }
             }
         }
-        currentX += (charWidth + 1) * pixelSize; // Шаг к следующему символу (+1 пиксель отступа)
+        currentX += (charWidth + 1) * pixelSize;
     }
 }
 
 startBtn.addEventListener('click', async () => {
     if (!window.VideoEncoder) {
-        alert("Браузер не поддерживает WebCodecs.");
+        alert("Браузер не поддерживает работу с WebCodecs.");
         return;
     }
 
@@ -268,18 +253,17 @@ startBtn.addEventListener('click', async () => {
     let speedMultiplier = 1;
     let infoMessage = "";
 
-    // Алгоритм сжатия по вашей логике (но ограничения теперь мягче благодаря 144p)
     if (totalMinutes < 5) {
         speedMultiplier = 1;
         infoMessage = "Оригинальная скорость.";
         infoBox.className = "info-box success";
     } else if (totalMinutes < 10) {
         speedMultiplier = 2;
-        infoMessage = `Ускорение x2 для экономии места.`;
+        infoMessage = `Ускорение x2.`;
         infoBox.className = "info-box warning";
     } else {
         speedMultiplier = 4;
-        infoMessage = `Ускорение x4 для экономии места.`;
+        infoMessage = `Ускорение x4.`;
         infoBox.className = "info-box warning";
     }
 
@@ -292,29 +276,32 @@ startBtn.addEventListener('click', async () => {
     const frameDurationMs = 1000 / fps; 
     const timeStepPerFrame = frameDurationMs * speedMultiplier; 
 
+    // Сборщик MP4 контейнера
     const muxer = new Mp4Muxer.Muxer({
         target: new Mp4Muxer.ArrayBufferTarget(),
         video: { codec: 'avc', width: canvas.width, height: canvas.height },
         fastStart: 'fragmented'
     });
 
+    // Настройка кодировщика видео
     const videoEncoder = new VideoEncoder({
         output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-        error: (e) => console.error(e)
+        error: (e) => {
+            console.error(e);
+            progressText.innerText = "Ошибка кодирования: " + e.message;
+        }
     });
 
-    // Важно: для AVC (H.264) размеры должны делиться на 2 или 4. 256x144 идеально подходит.
     videoEncoder.configure({
-        codec: 'avc1.4d001f', // Профиль низкого разрешения
+        codec: 'avc1.4d001f', 
         width: canvas.width,
         height: canvas.height,
-        bitrate: 150_000, // Для 144p текста 150kbps — это кристальная четкость
+        bitrate: 150_000, 
         avc: { format: 'annexb' },
         framerate: fps
     });
 
     function drawFrame(msCount) {
-        // Очистка фона
         ctx.fillStyle = '#0f172a'; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -332,13 +319,9 @@ startBtn.addEventListener('click', async () => {
 
         const timeString = `${sHrs}:${sMin}:${sSec}.${sMs}`;
 
-        // Рисуем таймер кастомным пиксельным шрифтом
         ctx.fillStyle = '#ffffff';
-        // Центрируем: строка из 11 символов шириной по 3 пикселя + отступы. Масштаб пикселя = 5.
-        // Итого ширина текста на экране около 215 пикселей. Встанет идеально по центру 256px холста.
         drawPixelText(timeString, 20, 55, 5);
 
-        // Индикатор ускорения
         if (speedMultiplier > 1) {
             ctx.fillStyle = '#ef4444';
             drawPixelText(`X${speedMultiplier}`, 110, 100, 3);
@@ -349,9 +332,19 @@ startBtn.addEventListener('click', async () => {
     let frameIndex = 0;
     const totalFrames = Math.ceil(totalMs / timeStepPerFrame);
 
+    // Функция ожидания разгрузки очереди кодировщика
+    async function waitEncoderQueue() {
+        while (videoEncoder.encodeQueueSize > 10) {
+            await new Promise(resolve => setTimeout(resolve, 5));
+        }
+    }
+
+    // Рендеринг
     while (frameIndex <= totalFrames) {
+        // Защита от переполнения внутренней очереди браузера
+        await waitEncoderQueue();
+
         let timeToDraw = (frameIndex === totalFrames) ? totalMs : currentVirtualMs;
-        
         drawFrame(timeToDraw);
 
         const timestampUs = Math.round((frameIndex * 1000000) / fps);
@@ -360,21 +353,22 @@ startBtn.addEventListener('click', async () => {
         videoEncoder.encode(videoFrame, { keyFrame: frameIndex % 30 === 0 });
         videoFrame.close();
 
-        // Проценты обновляем реже (каждые 100 кадров), так как скорость генерации бешеная
-        if (frameIndex % 100 === 0 || frameIndex === totalFrames) {
+        // Обновление интерфейса
+        if (frameIndex % 15 === 0 || frameIndex === totalFrames) {
             const percent = (frameIndex / totalFrames) * 100;
             progressFill.style.width = `${percent}%`;
             progressText.innerText = `Рендеринг: ${Math.floor(percent)}%`;
-            
-            // Микро-пауза, только чтобы страница не «паниковала»
-            await new Promise(resolve => setTimeout(resolve, 0));
+            // Передаем управление браузеру на кадр, чтобы отрисовать UI
+            await new Promise(resolve => requestAnimationFrame(resolve));
         }
 
         currentVirtualMs += timeStepPerFrame;
         frameIndex++;
     }
 
-    progressText.innerText = "Финализация...";
+    progressText.innerText = "Сборка файла...";
+    
+    // Мягко и гарантированно закрываем потоки
     await videoEncoder.flush();
     videoEncoder.close();
     muxer.finalize();
