@@ -144,16 +144,7 @@
         }
 
         #previewCanvas {
-            display: none; /* Скрыт, нужен только для генерации кадров */
-        }
-
-        @media (max-width: 480px) {
-            .container {
-                padding: 20px;
-            }
-            h1 {
-                font-size: 1.25rem;
-            }
+            display: none;
         }
     </style>
 </head>
@@ -183,20 +174,17 @@
 
     <button id="startBtn">Сгенерировать видео</button>
 
-    <div id="infoBox" class="info-box warning"></div>
+    <div id="infoBox" class="info-box"></div>
 
     <div class="progress-container" id="progressContainer">
-        <p style="font-size: 0.85rem; margin-bottom: 5px; text-align: center;" id="progressText">Отрисовка кадров: 0%</p>
+        <p style="font-size: 0.85rem; margin-bottom: 5px; text-align: center;" id="progressText">Подготовка...</p>
         <div class="progress-bar">
             <div class="progress-fill" id="progressFill"></div>
         </div>
     </div>
 </div>
 
-<canvas id="previewCanvas" width="1920" height="1080"></canvas>
-
-<script src="https://www.webcodecs.org/whammy.js"></script> 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/RecordRTC/5.6.2/RecordRTC.js"></script>
+<canvas id="previewCanvas" width="1280" height="720"></canvas>
 
 <script>
 const startBtn = document.getElementById('startBtn');
@@ -208,13 +196,11 @@ const canvas = document.getElementById('previewCanvas');
 const ctx = canvas.getContext('2d');
 
 startBtn.addEventListener('click', async () => {
-    // Получаем значения
     const hrs = parseInt(document.getElementById('hrs').value) || 0;
     const mins = parseInt(document.getElementById('mins').value) || 0;
     const secs = parseInt(document.getElementById('secs').value) || 0;
     const ms = parseInt(document.getElementById('ms').value) || 0;
 
-    // Общее время в миллисекундах
     const totalMs = (hrs * 3600 + mins * 60 + secs) * 1000 + ms;
 
     if (totalMs <= 0) {
@@ -226,56 +212,78 @@ startBtn.addEventListener('click', async () => {
     let speedMultiplier = 1;
     let infoMessage = "";
 
-    // Логика ускорения
     if (totalMinutes < 5) {
         speedMultiplier = 1;
-        infoMessage = "Время меньше 5 минут. Видео будет создано в оригинальной скорости.";
+        infoMessage = "Время меньше 5 минут. Видео будет в оригинальной скорости.";
         infoBox.className = "info-box success";
     } else if (totalMinutes < 10) {
         speedMultiplier = 2;
-        infoMessage = `Время меньше 10 минут. Видео ускорено в 2 раза для экономии места. (Фактическая длительность видео: ${(totalMinutes / 2).toFixed(1)} мин.)`;
+        infoMessage = `Время меньше 10 минут. Видео ускорено в 2 раза для экономии места. (Длительность файла: ${(totalMinutes / 2).toFixed(1)} мин.)`;
         infoBox.className = "info-box warning";
     } else if (totalMinutes <= 20) {
         speedMultiplier = 4;
-        infoMessage = `Время меньше 20 минут. Видео ускорено в 4 раза для экономии места. (Фактическая длительность видео: ${(totalMinutes / 4).toFixed(1)} мин.)`;
+        infoMessage = `Время меньше 20 минут. Видео ускорено в 4 раза для экономии места. (Длительность файла: ${(totalMinutes / 4).toFixed(1)} мин.)`;
         infoBox.className = "info-box warning";
     } else {
-        // Защита от зависания браузера при слишком больших видео
-        alert('Максимальная поддерживаемая длительность — 20 минут.');
+        alert('Максимальная длительность для генерации в браузере — 20 минут.');
         return;
     }
 
     infoBox.innerText = infoMessage;
     infoBox.style.display = "block";
     
-    // Блокируем интерфейс на время генерации
     startBtn.disabled = true;
     progressContainer.style.display = "block";
 
-    // Настройки видео
     const fps = 30; 
-    const frameDuration = 1000 / fps; // сколько мс «проживает» один кадр на экране (33.33мс)
-    const timeStepPerFrame = frameDuration * speedMultiplier; // сколько виртуального времени проходит за кадр
+    const frameDuration = 1000 / fps; 
+    const timeStepPerFrame = frameDuration * speedMultiplier; 
 
-    // Инициализируем RecordRTC для записи Canvas
-    const recorder = RecordRTC(canvas, {
-        type: 'canvas',
-        mimeType: 'video/mp4', // На ПК/Смартфонах RecordRTC соберет в контейнер (обычно webm/mp4 в зависимости от поддержки браузера)
-        bitsPerSecond: 4000000, // Высокое качество (4 Mbps)
-        frameInterval: frameDuration
-    });
+    // Захватываем поток из canvas
+    const stream = canvas.captureStream(fps);
+    
+    // Используем нативный MediaRecorder (поддерживается всеми смартфонами и ПК)
+    let options = { mimeType: 'video/webm; codecs=vp9' };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/mp4' };
+    }
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/webm' };
+    }
 
-    recorder.startRecording();
+    const recordedChunks = [];
+    const mediaRecorder = new MediaRecorder(stream, options);
+
+    mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        // Даем расширение mp4 или webm в зависимости от того, что записал браузер
+        const ext = mediaRecorder.mimeType.includes('mp4') ? 'mp4' : 'webm';
+        a.download = `stopwatch_${hrs}h_${mins}m_${secs}s.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        startBtn.disabled = false;
+        progressText.innerText = "Готово! Файл скачивается.";
+        progressFill.style.width = "100%";
+    };
+
+    // Запускаем запись
+    mediaRecorder.start();
 
     let currentVirtualMs = 0;
 
-    // Функция отрисовки красивого кадра
     function drawFrame(msCount) {
-        // Очистка и фон
-        ctx.fillStyle = '#0f172a'; // Темный стильный фон
+        ctx.fillStyle = '#0f172a'; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Расчет времени для вывода
         let displayMs = msCount % 1000;
         let totalSeconds = Math.floor(msCount / 1000);
         let displaySecs = totalSeconds % 60;
@@ -283,76 +291,54 @@ startBtn.addEventListener('click', async () => {
         let displayMins = totalMins % 60;
         let displayHrs = Math.floor(totalMins / 60);
 
-        // Форматирование в строки с ведущими нулями
         const sHrs = String(displayHrs).padStart(2, '0');
         const sMin = String(displayMins).padStart(2, '0');
         const sSec = String(displaySecs).padStart(2, '0');
-        const sMs = String(Math.floor(displayMs / 10)).padStart(2, '0'); // сотые доли секунды
+        const sMs = String(Math.floor(displayMs / 10)).padStart(2, '0'); 
 
         const timeString = `${sHrs}:${sMin}:${sSec}.${sMs}`;
 
-        // Настройки текста
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 160px monospace';
+        ctx.font = 'bold 90px monospace'; // Оптимальный размер для разрешения 1280x720
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
-        
-        // Рисуем текст по центру
         ctx.fillText(timeString, canvas.width / 2, canvas.height / 2);
 
-        // Водяной знак скорости (если видео ускорено)
         if (speedMultiplier > 1) {
             ctx.fillStyle = '#ef4444';
-            ctx.font = '40px sans-serif';
-            ctx.fillText(`Ускорение: x${speedMultiplier}`, canvas.width / 2, canvas.height / 2 + 150);
+            ctx.font = '30px sans-serif';
+            ctx.fillText(`Ускорение: x${speedMultiplier}`, canvas.width / 2, canvas.height / 2 + 100);
         }
     }
 
-    // Пошаговый рендеринг без зависания UI (через небольшие асинхронные паузы)
+    // Рендеринг
     async function generate() {
+        const totalFrames = Math.ceil(totalMs / timeStepPerFrame);
+        let frameCount = 0;
+
         while (currentVirtualMs <= totalMs) {
             drawFrame(currentVirtualMs);
             
-            // Сообщаем рекордеру, что кадр обновился
-            canvas.getContext('2d'); 
-
-            // Обновляем прогресс-бар
-            const percent = Math.min(100, (currentVirtualMs / totalMs) * 100);
-            progressFill.style.width = `${percent}%`;
-            progressText.innerText = `Генерация кадров: ${Math.floor(percent)}%`;
-
+            frameCount++;
             currentVirtualMs += timeStepPerFrame;
 
-            // Каждые 30 кадров даем браузеру "вздохнуть", чтобы интерфейс не завис
-            if (Math.floor(currentVirtualMs / timeStepPerFrame) % 30 === 0) {
-                await new Promise(resolve => requestAnimationFrame(resolve));
-            }
+            // Обновляем прогресс-бар на экране
+            const percent = Math.min(100, (frameCount / totalFrames) * 100);
+            progressFill.style.width = `${percent}%`;
+            progressText.innerText = `Отрисовка кадров: ${Math.floor(percent)}%`;
+
+            // Ждем один физический кадр, чтобы MediaRecorder успел его «съесть» из Canvas
+            await new Promise(resolve => setTimeout(resolve, 1000 / fps));
         }
 
-        // Финальный кадр на точном указанном пользователем времени
+        // Пишем финальную точку
         drawFrame(totalMs);
+        await new Promise(resolve => setTimeout(resolve, 1000 / fps));
 
-        // Останавливаем запись и скачиваем файл
-        recorder.stopRecording(() => {
-            const blob = recorder.getBlob();
-            const url = URL.createObjectURL(blob);
-            
-            // Создаем ссылку для скачивания
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `stopwatch_${hrs}h_${mins}m_${secs}s.mp4`;
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
-
-            // Возвращаем интерфейс в исходное состояние
-            startBtn.disabled = false;
-            progressText.innerText = "Готово! Скачивание началось.";
-            progressFill.style.width = "100%";
-        });
+        // Останавливаем запись
+        mediaRecorder.stop();
     }
 
-    // Запуск процесса
     generate();
 });
 </script>
