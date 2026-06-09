@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Надежный Секундомер 144p</title>
+    <title>Точный Секундомер 144p</title>
     <style>
         :root {
             --primary: #4f46e5;
@@ -162,15 +162,15 @@
     <div class="input-group">
         <div class="input-field">
             <label>Чч</label>
-            <input type="number" id="hrs" min="0" value="0">
+            <input type="number" id="hrs" min="0" value="1">
         </div>
         <div class="input-field">
             <label>Мм</label>
-            <input type="number" id="mins" min="0" max="59" value="0">
+            <input type="number" id="mins" min="0" max="59" value="12">
         </div>
         <div class="input-field">
             <label>Сс</label>
-            <input type="number" id="secs" min="0" max="59" value="10">
+            <input type="number" id="secs" min="0" max="59" value="0">
         </div>
         <div class="input-field">
             <label>Мс</label>
@@ -178,7 +178,7 @@
         </div>
     </div>
 
-    <button id="startBtn">Сгенерировать моментально</button>
+    <button id="startBtn">Сгенерировать видео</button>
 
     <div id="infoBox" class="info-box"></div>
 
@@ -203,7 +203,7 @@ const ctx = canvas.getContext('2d', { alpha: false });
 
 ctx.imageSmoothingEnabled = false;
 
-// Пиксельный шрифт 3x5
+// Четкий пиксельный шрифт 3x5
 const font3x5 = {
     '0': ["###","#.#","#.#","#.#","###"], '1': ["..#","..#","..#","..#","..#"],
     '2': ["###","..#","###","#..","###"], '3': ["###","..#","###","..#","###"],
@@ -246,17 +246,26 @@ startBtn.addEventListener('click', async () => {
     let speedMultiplier = 1;
     let infoMessage = "";
 
+    // Расширенная логика ускорения под ваши требования
     if (totalMinutes < 5) {
         speedMultiplier = 1;
-        infoMessage = "Оригинальная скорость.";
+        infoMessage = "Время < 5 мин. Скорость оригинальная.";
         infoBox.className = "info-box success";
     } else if (totalMinutes < 10) {
         speedMultiplier = 2;
-        infoMessage = `Ускорение x2.`;
+        infoMessage = "Время < 10 мин. Видео ускорено в 2 раза.";
+        infoBox.className = "info-box warning";
+    } else if (totalMinutes < 20) {
+        speedMultiplier = 4;
+        infoMessage = "Время < 20 мин. Видео ускорено в 4 раза.";
         infoBox.className = "info-box warning";
     } else {
-        speedMultiplier = 4;
-        infoMessage = `Ускорение x4.`;
+        // Автоматически рассчитываем коэффициент, чтобы итоговый файл сжимался до ~5 минут
+        // Например, для 72 минут: 72 / 5 = ~14.4 (округлим до красивого x16)
+        speedMultiplier = Math.pow(2, Math.ceil(Math.log2(totalMinutes / 5)));
+        if (speedMultiplier < 4) speedMultiplier = 4;
+        
+        infoMessage = `Большая длительность (${totalMinutes.toFixed(0)} мин). Видео автоматически ускорено в ${speedMultiplier} раз, чтобы файл оставался компактным.`;
         infoBox.className = "info-box warning";
     }
 
@@ -269,16 +278,16 @@ startBtn.addEventListener('click', async () => {
     const frameDurationMs = 1000 / fps; 
     const timeStepPerFrame = frameDurationMs * speedMultiplier; 
 
-    // Захватываем поток (0 FPS заставит рекордер кодировать кадры только тогда, когда мы их принудительно даем)
-    const stream = canvas.captureStream(0); 
+    // Захватываем поток с фиксированной частотой кадров (30 FPS)
+    // Благодаря этому браузер жестко зашивает правильный хронометраж в каждый кадр!
+    const stream = canvas.captureStream(fps); 
     
-    // Выбираем формат, который ТОЧНО поддерживается устройством
-    let options = { mimeType: 'video/mp4' };
+    let options = { mimeType: 'video/webm;codecs=vp8', videoBitsPerSecond: 100000 };
     if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-        options = { mimeType: 'video/webm;codecs=vp8' };
+        options = { mimeType: 'video/mp4', videoBitsPerSecond: 100000 };
     }
     if (!MediaRecorder.isTypeSupported(options.mimeType)) {
-        options = { mimeType: '' }; // Дефолт браузера (гарантия запуска)
+        options = { mimeType: '', videoBitsPerSecond: 100000 }; 
     }
 
     const recordedChunks = [];
@@ -294,7 +303,7 @@ startBtn.addEventListener('click', async () => {
         const a = document.createElement('a');
         a.href = url;
         const ext = mediaRecorder.mimeType.includes('webm') ? 'webm' : 'mp4';
-        a.download = `stopwatch_${hrs}h_${mins}m_${secs}s.${ext}`;
+        a.download = `stopwatch_144p_x${speedMultiplier}.${ext}`;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
@@ -330,42 +339,42 @@ startBtn.addEventListener('click', async () => {
         }
     }
 
-    // Запускаем запись
     mediaRecorder.start();
 
     let currentVirtualMs = 0;
     let frameIndex = 0;
     const totalFrames = Math.ceil(totalMs / timeStepPerFrame);
 
-    // Сверхбыстрый цикл генерации кадров
-    while (frameIndex <= totalFrames) {
-        let timeToDraw = (frameIndex === totalFrames) ? totalMs : currentVirtualMs;
-        
-        // 1. Рисуем
-        drawFrame(timeToDraw);
-        
-        // 2. Силой просим поток "съесть" кадр из Canvas
-        stream.getVideoTracks()[0].requestFrame();
-
-        // 3. Обновляем UI без тормозов (раз в 40 кадров)
-        if (frameIndex % 40 === 0 || frameIndex === totalFrames) {
-            const percent = (frameIndex / totalFrames) * 100;
-            progressFill.style.width = `${percent}%`;
-            progressText.innerText = `Рендеринг: ${Math.floor(percent)}%`;
+    // Главный асинхронный движок генерации кадров
+    async function process() {
+        while (frameIndex <= totalFrames) {
+            let timeToDraw = (frameIndex === totalFrames) ? totalMs : currentVirtualMs;
             
-            // Крошечная задержка в 1 миллисекунду, чтобы браузер успевал менять проценты на экране
-            await new Promise(resolve => setTimeout(resolve, 1));
+            drawFrame(timeToDraw);
+
+            // Обновляем шкалу раз в 50 кадров
+            if (frameIndex % 50 === 0 || frameIndex === totalFrames) {
+                const percent = (frameIndex / totalFrames) * 100;
+                progressFill.style.width = `${percent}%`;
+                progressText.innerText = `Рендеринг: ${Math.floor(percent)}%`;
+                
+                // Трюк: задержка в 0 мс освобождает поток, давая процессору
+                // работать на 100% мощности, но при этом сохраняя разметку времени браузера
+                await new Promise(resolve => setTimeout(resolve, 0));
+            }
+
+            currentVirtualMs += timeStepPerFrame;
+            frameIndex++;
         }
 
-        currentVirtualMs += timeStepPerFrame;
-        frameIndex++;
+        progressText.innerText = "Финализация файла...";
+        // Даем кодеку закончить запись последних пакетов
+        setTimeout(() => {
+            mediaRecorder.stop();
+        }, 500);
     }
 
-    progressText.innerText = "Финализация видео...";
-    // Небольшая задержка перед стопом, чтобы закрыть буфер
-    setTimeout(() => {
-        mediaRecorder.stop();
-    }, 500);
+    process();
 });
 </script>
 
