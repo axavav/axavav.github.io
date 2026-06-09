@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Супер-быстрый Пиксельный Секундомер</title>
+    <title>Надежный Секундомер 144p</title>
     <style>
         :root {
             --primary: #4f46e5;
@@ -192,8 +192,6 @@
     <canvas id="previewCanvas" width="256" height="144"></canvas>
 </div>
 
-<script src="https://cdn.jsdelivr.net/npm/mp4-muxer@3.2.0/build/mp4-muxer.main.js"></script>
-
 <script>
 const startBtn = document.getElementById('startBtn');
 const infoBox = document.getElementById('infoBox');
@@ -205,7 +203,7 @@ const ctx = canvas.getContext('2d', { alpha: false });
 
 ctx.imageSmoothingEnabled = false;
 
-// Шрифт 3x5
+// Пиксельный шрифт 3x5
 const font3x5 = {
     '0': ["###","#.#","#.#","#.#","###"], '1': ["..#","..#","..#","..#","..#"],
     '2': ["###","..#","###","#..","###"], '3': ["###","..#","###","..#","###"],
@@ -232,11 +230,6 @@ function drawPixelText(text, startX, startY, pixelSize) {
 }
 
 startBtn.addEventListener('click', async () => {
-    if (!window.VideoEncoder) {
-        alert("Браузер не поддерживает работу с WebCodecs.");
-        return;
-    }
-
     const hrs = parseInt(document.getElementById('hrs').value) || 0;
     const mins = parseInt(document.getElementById('mins').value) || 0;
     const secs = parseInt(document.getElementById('secs').value) || 0;
@@ -276,30 +269,39 @@ startBtn.addEventListener('click', async () => {
     const frameDurationMs = 1000 / fps; 
     const timeStepPerFrame = frameDurationMs * speedMultiplier; 
 
-    // Сборщик MP4 контейнера
-    const muxer = new Mp4Muxer.Muxer({
-        target: new Mp4Muxer.ArrayBufferTarget(),
-        video: { codec: 'avc', width: canvas.width, height: canvas.height },
-        fastStart: 'fragmented'
-    });
+    // Захватываем поток (0 FPS заставит рекордер кодировать кадры только тогда, когда мы их принудительно даем)
+    const stream = canvas.captureStream(0); 
+    
+    // Выбираем формат, который ТОЧНО поддерживается устройством
+    let options = { mimeType: 'video/mp4' };
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: 'video/webm;codecs=vp8' };
+    }
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        options = { mimeType: '' }; // Дефолт браузера (гарантия запуска)
+    }
 
-    // Настройка кодировщика видео
-    const videoEncoder = new VideoEncoder({
-        output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-        error: (e) => {
-            console.error(e);
-            progressText.innerText = "Ошибка кодирования: " + e.message;
-        }
-    });
+    const recordedChunks = [];
+    const mediaRecorder = new MediaRecorder(stream, options);
 
-    videoEncoder.configure({
-        codec: 'avc1.4d001f', 
-        width: canvas.width,
-        height: canvas.height,
-        bitrate: 150_000, 
-        avc: { format: 'annexb' },
-        framerate: fps
-    });
+    mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0) recordedChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = () => {
+        const blob = new Blob(recordedChunks, { type: mediaRecorder.mimeType || 'video/mp4' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        const ext = mediaRecorder.mimeType.includes('webm') ? 'webm' : 'mp4';
+        a.download = `stopwatch_${hrs}h_${mins}m_${secs}s.${ext}`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+
+        startBtn.disabled = false;
+        progressText.innerText = "Готово!";
+    };
 
     function drawFrame(msCount) {
         ctx.fillStyle = '#0f172a'; 
@@ -328,64 +330,42 @@ startBtn.addEventListener('click', async () => {
         }
     }
 
+    // Запускаем запись
+    mediaRecorder.start();
+
     let currentVirtualMs = 0;
     let frameIndex = 0;
     const totalFrames = Math.ceil(totalMs / timeStepPerFrame);
 
-    // Функция ожидания разгрузки очереди кодировщика
-    async function waitEncoderQueue() {
-        while (videoEncoder.encodeQueueSize > 10) {
-            await new Promise(resolve => setTimeout(resolve, 5));
-        }
-    }
-
-    // Рендеринг
+    // Сверхбыстрый цикл генерации кадров
     while (frameIndex <= totalFrames) {
-        // Защита от переполнения внутренней очереди браузера
-        await waitEncoderQueue();
-
         let timeToDraw = (frameIndex === totalFrames) ? totalMs : currentVirtualMs;
+        
+        // 1. Рисуем
         drawFrame(timeToDraw);
+        
+        // 2. Силой просим поток "съесть" кадр из Canvas
+        stream.getVideoTracks()[0].requestFrame();
 
-        const timestampUs = Math.round((frameIndex * 1000000) / fps);
-        const videoFrame = new VideoFrame(canvas, { timestamp: timestampUs });
-
-        videoEncoder.encode(videoFrame, { keyFrame: frameIndex % 30 === 0 });
-        videoFrame.close();
-
-        // Обновление интерфейса
-        if (frameIndex % 15 === 0 || frameIndex === totalFrames) {
+        // 3. Обновляем UI без тормозов (раз в 40 кадров)
+        if (frameIndex % 40 === 0 || frameIndex === totalFrames) {
             const percent = (frameIndex / totalFrames) * 100;
             progressFill.style.width = `${percent}%`;
             progressText.innerText = `Рендеринг: ${Math.floor(percent)}%`;
-            // Передаем управление браузеру на кадр, чтобы отрисовать UI
-            await new Promise(resolve => requestAnimationFrame(resolve));
+            
+            // Крошечная задержка в 1 миллисекунду, чтобы браузер успевал менять проценты на экране
+            await new Promise(resolve => setTimeout(resolve, 1));
         }
 
         currentVirtualMs += timeStepPerFrame;
         frameIndex++;
     }
 
-    progressText.innerText = "Сборка файла...";
-    
-    // Мягко и гарантированно закрываем потоки
-    await videoEncoder.flush();
-    videoEncoder.close();
-    muxer.finalize();
-
-    const { buffer } = muxer.target;
-    const blob = new Blob([buffer], { type: 'video/mp4' });
-    const url = URL.createObjectURL(blob);
-
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = `stopwatch_144p_${hrs}h_${mins}m_${secs}s.mp4`;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-
-    startBtn.disabled = false;
-    progressText.innerText = "Готово!";
+    progressText.innerText = "Финализация видео...";
+    // Небольшая задержка перед стопом, чтобы закрыть буфер
+    setTimeout(() => {
+        mediaRecorder.stop();
+    }, 500);
 });
 </script>
 
