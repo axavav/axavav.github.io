@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Моментальный Генератор Секундомера</title>
+    <title>Супер-быстрый Пиксельный Секундомер</title>
     <style>
         :root {
             --primary: #4f46e5;
@@ -142,15 +142,23 @@
             background-color: var(--primary);
         }
 
+        /* Показываем превью крупно, хотя реальный холст маленький */
         #previewCanvas {
-            display: none;
+            display: block;
+            margin: 20px auto 0 auto;
+            width: 100%;
+            max-width: 256px;
+            height: auto;
+            image-rendering: pixelated; /* Чтобы в браузере не размывалось при показе */
+            background: #0f172a;
+            border-radius: 8px;
         }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>Генератор Секундомера</h1>
+    <h1>Генератор Секундомера (144p)</h1>
     
     <div class="input-group">
         <div class="input-field">
@@ -176,14 +184,14 @@
     <div id="infoBox" class="info-box"></div>
 
     <div class="progress-container" id="progressContainer">
-        <p style="font-size: 0.85rem; margin-bottom: 5px; text-align: center;" id="progressText">Подготовка кодера...</p>
+        <p style="font-size: 0.85rem; margin-bottom: 5px; text-align: center;" id="progressText">Рендеринг...</p>
         <div class="progress-bar">
             <div class="progress-fill" id="progressFill"></div>
         </div>
     </div>
-</div>
 
-<canvas id="previewCanvas" width="1280" height="720"></canvas>
+    <canvas id="previewCanvas" width="256" height="144"></canvas>
+</div>
 
 <script src="https://cdn.jsdelivr.net/npm/mp4-muxer@3.2.0/build/mp4-muxer.main.js"></script>
 
@@ -194,12 +202,53 @@ const progressContainer = document.getElementById('progressContainer');
 const progressFill = document.getElementById('progressFill');
 const progressText = document.getElementById('progressText');
 const canvas = document.getElementById('previewCanvas');
-const ctx = canvas.getContext('2d', { alpha: false }); // оптимизация скорости
+const ctx = canvas.getContext('2d', { alpha: false });
+
+// Отключаем сглаживание для супер-четких пикселей
+ctx.imageSmoothingEnabled = false;
+
+// Встроенный жесткий пиксельный шрифт 3x5 (каждая цифра — массив строк-пикселей)
+const font3x5 = {
+    '0': ["###","#.#","#.#","#.#","###"],
+    '1': ["..#","..#","..#","..#","..#"],
+    '2': ["###","..#","###","#..","###"],
+    '3': ["###","..#","###","..#","###"],
+    '4': ["#.#","#.#","###","..#","..#"],
+    '5': ["###","#..","###","..#","###"],
+    '6': ["###","#..","###","#.#","###"],
+    '7': ["###","..#","..#","..#","..#"],
+    '8': ["###","#.#","###","#.#","###"],
+    '9': ["###","#.#","###","..#","###"],
+    ':': ["..",".#","..",".#",".."],
+    '.': ["..","..","..","..",".#"]
+};
+
+// Функция отрисовки пиксельного текста
+function drawPixelText(text, startX, startY, pixelSize) {
+    let currentX = startX;
+    for (let char of text) {
+        const glyph = font3x5[char] || ["...", "...", "...", "...", "..."];
+        const charWidth = glyph[0].length;
+
+        for (let row = 0; row < 5; row++) {
+            for (let col = 0; col < charWidth; col++) {
+                if (glyph[row][col] === '#') {
+                    ctx.fillRect(
+                        currentX + col * pixelSize, 
+                        startY + row * pixelSize, 
+                        pixelSize, 
+                        pixelSize
+                    );
+                }
+            }
+        }
+        currentX += (charWidth + 1) * pixelSize; // Шаг к следующему символу (+1 пиксель отступа)
+    }
+}
 
 startBtn.addEventListener('click', async () => {
-    // Проверка поддержки WebCodecs в браузере (iOS 15+, Android, Chrome, Safari)
     if (!window.VideoEncoder) {
-        alert("Ваш браузер слишком старый или не поддерживает моментальный рендеринг видео (WebCodecs API).");
+        alert("Браузер не поддерживает WebCodecs.");
         return;
     }
 
@@ -211,7 +260,7 @@ startBtn.addEventListener('click', async () => {
     const totalMs = (hrs * 3600 + mins * 60 + secs) * 1000 + ms;
 
     if (totalMs <= 0) {
-        alert('Пожалуйста, укажите время больше 0');
+        alert('Укажите время больше 0');
         return;
     }
 
@@ -219,26 +268,23 @@ startBtn.addEventListener('click', async () => {
     let speedMultiplier = 1;
     let infoMessage = "";
 
+    // Алгоритм сжатия по вашей логике (но ограничения теперь мягче благодаря 144p)
     if (totalMinutes < 5) {
         speedMultiplier = 1;
-        infoMessage = "Время меньше 5 минут. Скорость оригинальная.";
+        infoMessage = "Оригинальная скорость.";
         infoBox.className = "info-box success";
     } else if (totalMinutes < 10) {
         speedMultiplier = 2;
-        infoMessage = `Время меньше 10 минут. Ускорение x2. (Длительность файла: ${(totalMinutes / 2).toFixed(1)} мин.)`;
-        infoBox.className = "info-box warning";
-    } else if (totalMinutes <= 20) {
-        speedMultiplier = 4;
-        infoMessage = `Время меньше 20 минут. Ускорение x4. (Длительность файла: ${(totalMinutes / 4).toFixed(1)} мин.)`;
+        infoMessage = `Ускорение x2 для экономии места.`;
         infoBox.className = "info-box warning";
     } else {
-        alert('Максимальная длительность — 20 минут.');
-        return;
+        speedMultiplier = 4;
+        infoMessage = `Ускорение x4 для экономии места.`;
+        infoBox.className = "info-box warning";
     }
 
     infoBox.innerText = infoMessage;
     infoBox.style.display = "block";
-    
     startBtn.disabled = true;
     progressContainer.style.display = "block";
 
@@ -246,34 +292,29 @@ startBtn.addEventListener('click', async () => {
     const frameDurationMs = 1000 / fps; 
     const timeStepPerFrame = frameDurationMs * speedMultiplier; 
 
-    // Настраиваем MP4 Муксер (собирает контейнер)
     const muxer = new Mp4Muxer.Muxer({
         target: new Mp4Muxer.ArrayBufferTarget(),
-        video: {
-            codec: 'avc', // Отличная совместимость: H.264 MP4 читается везде
-            width: canvas.width,
-            height: canvas.height
-        },
-        fastStart: 'fragmented' // Позволяет воспроизводить видео сразу во время скачивания
+        video: { codec: 'avc', width: canvas.width, height: canvas.height },
+        fastStart: 'fragmented'
     });
 
-    // Настраиваем нативный кодировщик видео
     const videoEncoder = new VideoEncoder({
         output: (chunk, meta) => muxer.addVideoChunk(chunk, meta),
-        error: (e) => console.error("Ошибка кодирования:", e)
+        error: (e) => console.error(e)
     });
 
+    // Важно: для AVC (H.264) размеры должны делиться на 2 или 4. 256x144 идеально подходит.
     videoEncoder.configure({
-        codec: 'avc1.4d0028', // Профиль H.264 Main L4.0
+        codec: 'avc1.4d001f', // Профиль низкого разрешения
         width: canvas.width,
         height: canvas.height,
-        bitrate: 2_500_000, // 2.5 Mbps (отличное качество для текста)
+        bitrate: 150_000, // Для 144p текста 150kbps — это кристальная четкость
         avc: { format: 'annexb' },
         framerate: fps
     });
 
-    // Функция отрисовки кадра
     function drawFrame(msCount) {
+        // Очистка фона
         ctx.fillStyle = '#0f172a'; 
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
@@ -291,77 +332,66 @@ startBtn.addEventListener('click', async () => {
 
         const timeString = `${sHrs}:${sMin}:${sSec}.${sMs}`;
 
+        // Рисуем таймер кастомным пиксельным шрифтом
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 90px monospace'; 
-        ctx.textAlign = 'center';
-        ctx.textBaseline = 'middle';
-        ctx.fillText(timeString, canvas.width / 2, canvas.height / 2);
+        // Центрируем: строка из 11 символов шириной по 3 пикселя + отступы. Масштаб пикселя = 5.
+        // Итого ширина текста на экране около 215 пикселей. Встанет идеально по центру 256px холста.
+        drawPixelText(timeString, 20, 55, 5);
 
+        // Индикатор ускорения
         if (speedMultiplier > 1) {
             ctx.fillStyle = '#ef4444';
-            ctx.font = '30px sans-serif';
-            ctx.fillText(`Ускорение: x${speedMultiplier}`, canvas.width / 2, canvas.height / 2 + 100);
+            drawPixelText(`X${speedMultiplier}`, 110, 100, 3);
         }
     }
 
-    // Главный цикл моментальной генерации
     let currentVirtualMs = 0;
     let frameIndex = 0;
-    
-    // Считаем общее количество кадров для идеального финиша
     const totalFrames = Math.ceil(totalMs / timeStepPerFrame);
 
     while (frameIndex <= totalFrames) {
-        // Если это самый последний кадр, принудительно ставим финальное пользовательское время
         let timeToDraw = (frameIndex === totalFrames) ? totalMs : currentVirtualMs;
         
         drawFrame(timeToDraw);
 
-        // Создаем объект кадра из Canvas (микросекунды для временной метки)
         const timestampUs = Math.round((frameIndex * 1000000) / fps);
         const videoFrame = new VideoFrame(canvas, { timestamp: timestampUs });
 
-        // Отправляем в процессор (код выполняется асинхронно, без задержек интерфейса)
         videoEncoder.encode(videoFrame, { keyFrame: frameIndex % 30 === 0 });
-        videoFrame.close(); // Очищаем память сразу
+        videoFrame.close();
 
-        // Обновляем визуальный процент (работает пачками, чтобы не тормозить цикл)
-        if (frameIndex % 10 === 0 || frameIndex === totalFrames) {
+        // Проценты обновляем реже (каждые 100 кадров), так как скорость генерации бешеная
+        if (frameIndex % 100 === 0 || frameIndex === totalFrames) {
             const percent = (frameIndex / totalFrames) * 100;
             progressFill.style.width = `${percent}%`;
             progressText.innerText = `Рендеринг: ${Math.floor(percent)}%`;
-            // Короткая пауза раз в 30 кадров, чтобы страница "дышала" и обновляла UI
-            if (frameIndex % 30 === 0) {
-                await new Promise(resolve => requestAnimationFrame(resolve));
-            }
+            
+            // Микро-пауза, только чтобы страница не «паниковала»
+            await new Promise(resolve => setTimeout(resolve, 0));
         }
 
         currentVirtualMs += timeStepPerFrame;
         frameIndex++;
     }
 
-    progressText.innerText = "Упаковка в MP4...";
-
-    // Ждем завершения кодирования всех отправленных кадров
+    progressText.innerText = "Финализация...";
     await videoEncoder.flush();
     videoEncoder.close();
     muxer.finalize();
 
-    // Забираем готовый буфер и превращаем в файл
     const { buffer } = muxer.target;
     const blob = new Blob([buffer], { type: 'video/mp4' });
     const url = URL.createObjectURL(blob);
 
-    // Автоматическое скачивание
     const a = document.createElement('a');
     a.href = url;
-    a.download = `stopwatch_${hrs}h_${mins}m_${secs}s.mp4`;
+    a.download = `stopwatch_144p_${hrs}h_${mins}m_${secs}s.mp4`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
 
     startBtn.disabled = false;
-    progressText.innerText = "Готово! Скачивание началось.";
+    progressText.innerText = "Готово!";
 });
 </script>
 
